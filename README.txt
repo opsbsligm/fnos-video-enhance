@@ -72,9 +72,9 @@ GPU 全功率（2026-10-10，0.3.3，已部署）：
 回滚：恢复preupgrade-20261014各文件 + releases内旧fpk走同一路径重装。
 遗留：f8cdb9bc旧坏件成品待用户决定重跑或手动处理（app不擅删用户目录文件）；明暗主题/窄屏真机高清截图验收仍缺。
 
-安全闭环与版本收口（2026-11-01，0.3.8，源码/CI 已就绪，尚未打包部署）：
-背景：接入 GitLab CI 后发现安全扫描"全绿"是假象——allow_failure:false 只约束分析器退出码，不约束发现数量；pipeline 980 的 semgrep 报出 24 条（含 1 条 High）作业仍 success，本实例漏洞看板 API 返回 404（无漏洞管理许可）。
-真实修复（不做静默豁免）：①前端接口层补同源边界（path 必须 /api/ 前缀、非协议相对、URL() 解析后断言同源，被阻止的请求一个都不发出）；②失败原因分类的正则改为小写子串匹配（任务日志长度不可控，正则回溯会造成同步卡顿），并补中文关键字大小写归一回归测试；③guard.py 推理监测由 urlopen 改为固定回环主机的 http.client，只接受 200 且不跟随 3xx（跳转目标由被监测端决定，那才是真正可用的出站入口）——已在 NAS 用生产 runtime python3.11 + 真实回环 HTTP 服务实测 200 正常/302 与 500 拒绝/低位端口拒绝，指标解析与改前一致；④三处 hashlib.md5 属 fnOS 包契约（manifest checksum）而非安全摘要，加 usedforsecurity=False 显式声明，digest 值逐位不变。
-新增门禁：scripts/ci/assess_sast_findings.py 读取 SAST/密钥/依赖三份报告自建裁决，Critical/High/Medium 默认阻断；豁免须逐条登记指纹+理由+复核人+到期日，过期或已失效均报错。指纹含行号，代码一改即失效、必须重新定性。流水线新增"依赖漏洞扫描"（npm audit→GitLab 依赖扫描报告；官方 gemnasium 镜像已需认证拉取、CI 无 docker 执行器，registry 须显式指向 npmjs，runner 默认 npmmirror 未实现 audit 接口）与"安全裁决门禁"（needs:optional 汇聚三份报告）。门禁自身有 12 项测试。
-测试：Python 90 项（含新增 12 项门禁测试与 2 项安全回归）、前端 34 项、构建产物逐字节一致、版本五处一致=0.3.8。PIPELINE_TAG 保持 0.3.0-cfr-segments，检查点向后兼容。
-未闭合：0.3.8 的 fpk 尚未在 NAS 用 fnpack 构建，线上仍运行 0.3.7（target 内 index.html 静态串已热修为 0.3.7，包内为 0.3.6 的偏差会在下次打包自然消除）；真机抽帧画质与明暗/窄屏截图验收仍缺；遗留坏件 f8cdb9bc（NO_SAY 下撕裂成品 639MB）仍待用户决定重跑或手动处理，app 不删用户目录文件。
+安全闭环与版本收口（2026-11-01，0.3.8 源码，未发布 FPK）：
+GitLab：https://www.bsligm.com:8445/codex/fnos-video-enhance；codex 开发，liguangming 审查批准合并。
+修复/加固：前端接口同源校验；错误提示改为子串归类；监测请求固定回环且拒绝重定向；包兼容 MD5 显式声明非安全用途。
+CI：版本一致性、Python语法/单测、前端构建逐字节核验/单测、打包清单、SAST、密钥和 npm 依赖扫描、安全裁决。三份安全报告均强制存在、成功且可解析；依赖报告按实例官方 schema 15.2.4 校验。Critical/High/Medium/Unknown 阻断，误报/兼容例外逐项注明 liguangming 裁决、理由、重查条件和到期日。行号变化、过期、重复及已失效条目均阻断；审查批准绑定精确 HEAD。
+审查例外：三处 MD5 为现有 fnOS 包格式兼容校验，不作为防篡改证明；浏览器 fetch 告警在当前同源边界下判误报。仅对构建可复现的 src/www/app.js 排除重复 SAST，自有源码、其余静态资源仍在扫描范围，第三方 npm 依赖由 npm audit 覆盖。
+边界：本次是源码/CI交付；NAS 外置 PyTorch/CUDA/FFmpeg 运行包未纳入此 npm 扫描，不宣称 FPK 全供应链验收。上线需另外生成运行包清单、漏洞核查、fnpack 打包、备份升级和真机抽帧验收。线上0.3.7继续运行，PIPELINE_TAG 保持0.3.0-cfr-segments。

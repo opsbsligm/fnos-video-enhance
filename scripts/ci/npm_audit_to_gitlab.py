@@ -1,12 +1,9 @@
 #!/usr/bin/env python3
 """把 `npm audit --json` 的结果转成 GitLab Dependency Scanning 报告。
 
-为什么要自己转：本实例没有为项目注入任何依赖扫描作业（实证：pipeline 980 的作业
-全集就是 .gitlab-ci.yml 里声明的 8 个，没有 .pipeline-policy-pre），而官方
-gemnasium 镜像在 registry.gitlab.com 已需认证拉取（本机匿名探测 401），CI 也没有
-可用的 docker 执行器。与其留一个永远不跑的空 job 冒充"已做依赖扫描"，不如用仓库里
-真实存在的工具链（npm audit + 已锁定的 package-lock.json）产出同样能进漏洞看板、
-也能被安全裁决门禁读取的报告。
+使用已锁定的 package-lock.json 执行 npm audit，将公告转为实例支持的
+GitLab 15.2.4 依赖报告；CI 在上传之前按官方 schema 校验。
+此作业覆盖 npm 依赖，不代表对 NAS 外置 Python/CUDA 运行包已完成漏洞扫描。
 
 三条不容妥协的纪律：
   1) 输入不可用即失败：npm audit 因镜像源不支持/网络失败而没有给出结果时退出非零，
@@ -19,6 +16,8 @@ gemnasium 镜像在 registry.gitlab.com 已需认证拉取（本机匿名探测 
 from __future__ import annotations
 
 import argparse
+import datetime
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -31,13 +30,14 @@ BLOCKED_SUMMARY_KEYS = ('critical', 'high', 'moderate')
 
 
 def _identifiers(value: dict, advisory_id, url: str, cvss=None, cwe=()) -> list[dict]:
-    ids = [{'type': 'npm_advisory_id', 'name': 'npm advisory', 'value': str(advisory_id), 'url': url or ''}]
+    ids = [{'type': 'npm_advisory_id', 'name': 'npm advisory', 'value': str(advisory_id)}]
+    if url: ids[0]['url'] = url
     for cve in (value.get('cves') or []):
         if cve:
             ids.append({'type': 'cve', 'name': 'CVE', 'value': cve,
                         'url': f'https://nvd.nist.gov/vuln/detail/{cve}'})
     for item in cwe:
-        ids.append({'type': 'cwe', 'name': 'CWE', 'value': str(item).replace('CWE-', ''), 'url': ''})
+        ids.append({'type': 'cwe', 'name': 'CWE', 'value': str(item).replace('CWE-', '')})
     if cvss is not None:
         ids.append({'type': 'cvss', 'name': 'CVSS', 'value': str(cvss)})
     return ids
@@ -46,12 +46,12 @@ def _identifiers(value: dict, advisory_id, url: str, cvss=None, cwe=()) -> list[
 def _finding(*, module, version, severity, title, overview, identifiers, url,
              lock_path, paths, fix_available) -> dict:
     return {
-        'uuid': f"npm-{module}-{version}-{identifiers[0]['value']}",
+        'id': hashlib.sha256(f"npm-{module}-{version}-{identifiers[0]['value']}".encode()).hexdigest(),
         'name': (title or '依赖漏洞').strip(),
         'severity': SEVERITY.get(str(severity).lower(), 'Unknown'),
         'description': (overview or title or '').strip(),
         'identifiers': identifiers,
-        'links': [url] if url else [],
+        'links': [{'url': url}] if url else [],
         'solution': f'升级到 {fix_available}' if fix_available else '见公告中的修复建议',
         'location': {
             'file': lock_path,
@@ -59,6 +59,7 @@ def _finding(*, module, version, severity, title, overview, identifiers, url,
                 'package': {'name': module, 'ecosystem': 'npm', 'version': version},
                 'path': lock_path,
                 'package_manager': 'npm',
+                'version': version,
                 # 依赖链用于人工定位是哪条路径引入，截断避免报告膨胀。
                 'paths': list(paths)[:8],
             },
@@ -128,17 +129,19 @@ def convert(audit: dict, lock_path: str = 'package-lock.json',
     return findings
 
 
-def build_report(vulnerabilities: list[dict]) -> dict:
+def build_report(vulnerabilities: list[dict], scanner_version: str = 'unknown') -> dict:
+    now = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S')
     return {
         'version': '15.2.4',
         'scan': {
             'type': 'dependency_scanning', 'status': 'success',
-            'scanner': {'id': 'npm-audit', 'name': 'npm audit', 'vendor': {'name': 'npm'},
-                        'url': 'https://docs.npmjs.com/cli/commands/npm-audit'},
-            'start_time': '0', 'end_time': '0',
+            'analyzer': {'id': 'npm-audit-adapter', 'name': 'npm audit adapter',
+                         'version': '1.0.0', 'vendor': {'name': 'HOMELAB'}},
+            'scanner': {'id': 'npm-audit', 'name': 'npm audit', 'version': scanner_version,
+                        'vendor': {'name': 'npm'}, 'url': 'https://docs.npmjs.com/cli/commands/npm-audit'},
+            'start_time': now, 'end_time': now,
         },
         'vulnerabilities': vulnerabilities,
-        'dependency_files': ['package-lock.json'],
     }
 
 
@@ -147,6 +150,7 @@ def main() -> int:
     ap.add_argument('--input', default='npm-audit.json', help='npm audit --json 的输出文件')
     ap.add_argument('--output', default='gl-dependency-scanning-report.json')
     ap.add_argument('--lock', default='package-lock.json')
+    ap.add_argument('--scanner-version', default='unknown')
     args = ap.parse_args()
 
     raw = Path(args.input).read_text(encoding='utf-8').strip()
@@ -160,6 +164,9 @@ def main() -> int:
         # 镜像源（如 npmmirror）会把 audit 错误以非 JSON 形式混进 stdout，必须判失败。
         print(f'{args.input} 不是合法 JSON（{error}）；前 200 字：{raw[:200]}', file=sys.stderr)
         return 2
+    if not isinstance(audit, dict) or audit.get('error'):
+        print('npm audit 返回错误或非对象，拒绝生成报告', file=sys.stderr)
+        return 2
     if not audit.get('advisories') and not audit.get('vulnerabilities') and 'metadata' not in audit:
         print(f'{args.input} 既无 advisories 也无 vulnerabilities，npm audit 可能未真正执行：'
               f'{raw[:200]}', file=sys.stderr)
@@ -167,12 +174,12 @@ def main() -> int:
 
     findings = convert(audit, lock_path=args.lock, versions=versions_from_lock(Path(args.lock)))
     Path(args.output).write_text(
-        json.dumps(build_report(findings), ensure_ascii=False, indent=2), encoding='utf-8')
+        json.dumps(build_report(findings, args.scanner_version), ensure_ascii=False, indent=2), encoding='utf-8')
 
     summary = (audit.get('metadata') or {}).get('vulnerabilities') or {}
     expect = sum(int(summary.get(k, 0)) for k in BLOCKED_SUMMARY_KEYS)
     print(f"依赖扫描完成：npm audit 汇总={summary}；写出 {args.output}（{len(findings)} 条）")
-    if expect and not findings:
+    if expect and not any(v['severity'] in ('Critical', 'High', 'Medium') for v in findings):
         print(f'自检失败：npm audit 汇总报告 {expect} 个阻断级漏洞，但本脚本转出 0 条；'
               '说明报告格式解析分支缺失，禁止以"无漏洞"收尾。', file=sys.stderr)
         return 2

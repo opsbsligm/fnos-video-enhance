@@ -9,8 +9,9 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$root"
 
-out="$(mktemp -t ve-app-js-XXXXXX.js)"
-trap 'rm -f "$out"' EXIT
+tmpdir="$(mktemp -d "${TMPDIR:-/tmp}/ve-build-XXXXXX")"
+out="$tmpdir/app.js"
+trap 'rm -rf "$tmpdir"' EXIT
 
 ./node_modules/.bin/esbuild src/frontend.js --bundle --minify --target=es2020 --outfile="$out" >/dev/null 2>&1
 

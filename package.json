@@ -12,6 +12,7 @@
     "@trimjs/web-app": "0.4.2"
   },
   "devDependencies": {
+    "ajv": "8.20.0",
     "esbuild": "0.25.12"
   }
 }

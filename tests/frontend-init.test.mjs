@@ -34,7 +34,7 @@ async function start(inputs=['/media'],gpus=[]){
     document:{getElementById:id=>nodes.get(id)||null,createElement:tag=>new Element(tag),querySelectorAll:()=>[],body:new Element()},
     window:{addEventListener(){}},setInterval(fn){ctx.poll=fn;},setTimeout(){},clearTimeout(){},
     URL,
-    fetch:async url=>{calls.push(url);let data;
+    fetch:async (url,options)=>{ctx.lastRequestOptions=options;calls.push(url);let data;
       if(url.endsWith('/api/status'))data={version:'test',gpu:{gpus},dependency_profile:'test'};
       else if(url.endsWith('/api/directories'))data={inputs,shared:[],roles:{}};
       else if(url.includes('/api/browse?')){const path=new URLSearchParams(url.split('?')[1]).get('path');data={path,root:inputs.find(r=>path.startsWith(r)),entries:[]};}
@@ -206,6 +206,8 @@ test('失败原因归类对中文关键字大小写不敏感',async()=>{
 test('接口请求只允许同源相对接口路径',async()=>{
  const {ctx,calls}=await start();
  await ctx.apiCall('/api/status');
+ assert.equal(ctx.lastRequestOptions.mode,'same-origin','浏览器必须阻止跨源请求');
+ assert.equal(ctx.lastRequestOptions.redirect,'error','禁止接口重定向扩展请求范围');
  // 相对路径必须被解析成同源绝对地址：这就是"无法指向别的主机"的可核对证据。
  assert.equal(calls[calls.length-1],'http://nas.local/app/video-enhance/api/status',
    '相对接口应拼成同源绝对地址：'+calls.join(' '));

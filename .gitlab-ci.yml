@@ -9,10 +9,8 @@
 #   见 依赖漏洞扫描；不能假设"实例会替我扫"。
 #
 # 为什么本地工具链作业必须挂在 macos runner：
-#   Python 单测依赖 Linux 语义（open_beneath 的 O_PATH|O_DIRECTORY、dir_fd），
-#   Apple 自带 python3.9 不可用；NAS 侧 runtime python3.11 不在 CI 可达范围，
-#   因此以本机 python3.11 为权威解释器，并在作业内显式固定版本而不是用 PATH 里的
-#   默认 python3（本机默认为 3.15）。
+#   Mac runner 以 Python 3.11 跑可移植回归（与目标解释器版本一致）；
+#   Linux ACL/O_PATH/CUDA 与最终媒体验收仍须在 NAS 单独验证。
 #
 # 不启用 Docker 安全模板于 shell executor 之外的组合；发布产物（.fpk）需要在
 # NAS 上用官方 fnpack 构建，属部署门禁，不在 CI 内伪造。
@@ -110,6 +108,7 @@ Python单测:
   tags: [macos]
   timeout: 5m
   script:
+    - npm ci --no-audit --no-fund
     - node --test tests/*.test.mjs
   rules: *always_on_mr_and_branch
 
@@ -135,34 +134,35 @@ semgrep-sast:
     # 内 crypto.randomUUID 不可用时的 Math.random 回退分支，本仓库自有代码的随机数
     # 一律来自 crypto.getRandomValues，见 src/auth-flow.mjs:13）；源码本身已由
     # src/frontend.js 上的同名规则覆盖。因此排除产物、保留源码，而不是整体放宽。
-    SAST_EXCLUDED_PATHS: "$DEFAULT_SAST_EXCLUDED_PATHS, src/www"
+    SAST_EXCLUDED_PATHS: "$DEFAULT_SAST_EXCLUDED_PATHS, src/www/app.js"
 
 secret_detection:
   image: registry.gitlab.com/security-products/secrets@sha256:dd2449c8bf1fdb25c7e81b7128c9ada36e0b4f10c8763bd71c3a2ca8cda9e51a
   allow_failure: false
 
 # 依赖漏洞扫描：官方 gemnasium 镜像在 registry.gitlab.com 已需认证拉取（本机匿名
-# 探测 401），CI 也没有可用的 docker 执行器；因此以仓库既有工具链真实执行 npm audit，
+# 探测 401）；本项目以已有 Node 工具链执行 npm audit，
 # 并转成标准依赖扫描报告（原因写在脚本头部）。registry 显式指向 npmjs ——
 # runner 默认的 npmmirror 未实现 audit 接口，直接 npm audit 会报错退出。
 #
 # 为什么不让 npm audit 的非零退出码直接判失败：那样报告工件不会产出，下游裁决作业
 # 拿不到依据，也看不到是哪条依赖。这里保留退出码信息，把裁决统一交给
 # 安全裁决门禁；转换脚本自身会拒绝不可用输入，所以"扫描没跑成"依然会失败。
-# 另注：本实例 `/projects/19/vulnerabilities` 返回 404（无漏洞管理许可），因此报告
-# 的实际消费者是裁决作业，不能依赖 GitLab 漏洞看板。
+# 报告由裁决作业实际消费，并按实例支持的官方 schema 离线校验。
 依赖漏洞扫描:
   extends: .node_toolchain
   stage: test
   tags: [macos]
   timeout: 5m
   script:
+    - npm ci --no-audit --no-fund
     - |
       set +e
       npm audit --json --registry=https://registry.npmjs.org > npm-audit.json
       echo "npm audit 退出码=$?（存在漏洞时为 1，判定交给 安全裁决门禁）"
       set -e
-    - $PY scripts/ci/npm_audit_to_gitlab.py --input npm-audit.json --lock package-lock.json
+    - $PY scripts/ci/npm_audit_to_gitlab.py --input npm-audit.json --lock package-lock.json --scanner-version "$(npm --version)"
+    - node scripts/ci/validate_dependency_report.cjs
   artifacts:
     when: always
     expire_in: 1 week
@@ -187,13 +187,10 @@ secret_detection:
   needs:
     - job: semgrep-sast
       artifacts: true
-      optional: true
     - job: secret_detection
       artifacts: true
-      optional: true
     - job: 依赖漏洞扫描
       artifacts: true
-      optional: true
   script:
     - $PY scripts/ci/assess_sast_findings.py --dir . --triage scripts/ci/sast-triage.json
   rules: *always_on_mr_and_branch

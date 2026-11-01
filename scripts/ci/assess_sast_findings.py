@@ -10,7 +10,7 @@
 本门禁读取分析器 artifacts，自建裁决：
   Critical/High  → 默认阻断（fail）
   Medium         → 默认阻断（可用带理由的豁免条目放行）
-  Low/Unknown    → 报告不阻断
+  Low            → 报告不阻断；Unknown 默认阻断
   Info           → 报告不阻断（多为测试/验收脚本的 assert 类告警）
 任何豁免必须在 scripts/ci/sast-triage.json 里逐条登记：指纹 + 理由 + 失效条件 +
 到期日 + 复核人。条目过期即视为未豁免，强制重新审视；未使用的条目同样报错，
@@ -22,16 +22,12 @@ import json
 import sys
 from pathlib import Path
 
-BLOCKING = {'critical', 'high', 'medium'}
+BLOCKING = {'critical', 'high', 'medium', 'unknown'}
 SEVERITY_ORDER = {'critical': 0, 'high': 1, 'medium': 2, 'low': 3, 'unknown': 4, 'info': 5}
 REPORTS = ('gl-sast-report.json', 'gl-secret-detection-report.json', 'gl-dependency-scanning-report.json')
 
-# 至少要读到这一份，否则等于"没扫也通过"。为什么是 SAST 而不是别的：本流水线的
-# semgrep-sast 是 allow_failure:false 的必经作业，也是唯一会产出 High/Medium 的
-# 分析器；它的 artifacts 缺失只可能是没跑成（作业失败/被取消/needs 配置写错），
-# 而不是"这个项目没有可扫代码"。实证：在空目录上运行旧版本门禁，输出
-# "（无发现）… 安全裁决通过"并退出 0——扫描器整体失联时门禁反而变绿。
-REQUIRED_REPORTS = ('gl-sast-report.json',)
+# 三类分析器均为必需输入；报告缺失、失败或结构异常一律拒绝合并。
+REQUIRED_REPORTS = dict(zip(REPORTS, ('sast', 'secret_detection', 'dependency_scanning')))
 
 
 def fingerprint(finding: dict) -> str:
@@ -52,15 +48,25 @@ def fingerprint(finding: dict) -> str:
 
 def load_findings(base: Path) -> list[dict]:
     out = []
-    for name in REPORTS:
+    for name, scan_type in REQUIRED_REPORTS.items():
         p = base / name
-        if not p.exists():
-            continue
+        if not p.is_file():
+            raise ValueError(f'分析器报告缺失：{name}')
         data = json.loads(p.read_text(encoding='utf-8'))
-        items = data.get('vulnerabilities') or data.get('findings') or []
+        if not isinstance(data, dict):
+            raise ValueError(f'{name} 必须是报告对象')
+        scan = data.get('scan')
+        if not isinstance(scan, dict) or scan.get('status') != 'success' or scan.get('type') != scan_type:
+            raise ValueError(f'{name} 扫描未成功或类型错误')
+        items = data.get('vulnerabilities')
+        if not isinstance(items, list):
+            raise ValueError(f'{name} 缺少 vulnerabilities 数组')
         for item in items:
-            item['_report'] = name
-            out.append(item)
+            if not isinstance(item, dict) or str(item.get('severity', '')).lower() not in SEVERITY_ORDER:
+                raise ValueError(f'{name} 发现缺少有效严重度')
+            if not isinstance(item.get('location'), dict) or not item['location'].get('file') or not item.get('identifiers'):
+                raise ValueError(f'{name} 发现缺少位置或规则标识')
+            out.append(dict(item, _report=name))
     return out
 
 
@@ -68,7 +74,22 @@ def load_triage(path: Path) -> dict:
     if not path.exists():
         return {}
     doc = json.loads(path.read_text(encoding='utf-8'))
-    return {e['fingerprint']: e for e in doc.get('waivers', [])}
+    entries = doc.get('waivers')
+    if not isinstance(entries, list):
+        raise ValueError('豁免清单缺少 waivers 数组')
+    result = {}
+    for entry in entries:
+        for field in ('fingerprint', 'reason', 'recheck', 'expires_at', 'reviewed_by'):
+            if not isinstance(entry.get(field), str) or not entry[field].strip():
+                raise ValueError(f'豁免缺少必填字段：{field}')
+        if entry['reviewed_by'] != 'liguangming':
+            raise ValueError('豁免须经 liguangming 裁决，并在 MR 绑定 HEAD 复核')
+        datetime.date.fromisoformat(entry['expires_at'])
+        fp = entry['fingerprint']
+        if fp in result:
+            raise ValueError(f'重复豁免：{fp}')
+        result[fp] = entry
+    return result
 
 
 def main() -> int:
@@ -81,19 +102,13 @@ def main() -> int:
 
     block = {s.strip().lower() for s in args.block.split(',') if s.strip()}
     base = Path(args.dir)
-    findings = load_findings(base)
-    waivers = load_triage(Path(args.triage))
-    today = datetime.date.today()
-
-    missing = [name for name in REQUIRED_REPORTS if not (base / name).exists()]
-    if missing:
-        present = [n for n in REPORTS if (base / n).exists()]
-        print(f"分析器报告缺失：{', '.join(missing)}；本目录只有："
-              f"{', '.join(present) or '（无任何报告）'}")
-        print("无法裁决：扫描作业未产出报告不等于没有漏洞。请确认 semgrep-sast 作业"
-              "已执行且其 artifacts 被本作业取到（needs 的 artifacts:true 取的是 archive，"
-              "作业里未列入 paths 的文件不会被下载）。")
+    try:
+        findings = load_findings(base)
+        waivers = load_triage(Path(args.triage))
+    except (OSError, ValueError, TypeError, KeyError) as error:
+        print(f'无法裁决：{error}')
         return 1
+    today = datetime.date.today()
 
     print(f"读取到 {len(findings)} 条扫描发现；阻断级别={sorted(block, key=lambda s: SEVERITY_ORDER.get(s, 9))}")
     used: set[str] = set()
@@ -136,7 +151,7 @@ def main() -> int:
         for b in blockers:
             print('  ✗', b)
         print("\n处置二选一：修代码消除该发现；或在 scripts/ci/sast-triage.json 增加"
-              "条目（fingerprint/reason/expiry/reviewed_by/expiry），后者须由审查人认可。")
+              "条目（fingerprint/reason/recheck/expires_at/reviewed_by），后者须由审查人认可。")
         rc = 1
     if stale:
         print(f"\n豁免清单存在已失效条目（当前扫描已不再报出，请删除）：")

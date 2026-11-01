@@ -34,8 +34,9 @@ class AdjudicationTests(unittest.TestCase):
     def run_gate(self, findings, waivers=None, extra=()):
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
-            (base/'gl-sast-report.json').write_text(
-                json.dumps({'vulnerabilities': findings}), encoding='utf-8')
+            for name, typ in load('assess_sast_findings').REQUIRED_REPORTS.items():
+                (base/name).write_text(json.dumps({'scan': {'status': 'success', 'type': typ},
+                    'vulnerabilities': findings if typ == 'sast' else []}), encoding='utf-8')
             triage = base/'triage.json'
             triage.write_text(json.dumps({'waivers': waivers or []}), encoding='utf-8')
             proc = subprocess.run(
@@ -73,6 +74,34 @@ class AdjudicationTests(unittest.TestCase):
             self.assertIn('无法裁决', proc.stdout)
             self.assertNotIn('安全裁决通过', proc.stdout)
 
+    def test_each_required_report_missing_or_failed_blocks(self):
+        mod = load('assess_sast_findings')
+        for missing in mod.REQUIRED_REPORTS:
+            with self.subTest(report=missing), tempfile.TemporaryDirectory() as tmp:
+                base = Path(tmp)
+                for name, typ in mod.REQUIRED_REPORTS.items():
+                    if name != missing:
+                        (base/name).write_text(json.dumps({'scan': {'status': 'success', 'type': typ},
+                                                          'vulnerabilities': []}))
+                with self.assertRaises(ValueError):mod.load_findings(base)
+                for bad in ({}, {'scan': {'status': 'failure'}},
+                            {'scan': {'status': 'success', 'type': mod.REQUIRED_REPORTS[missing]}},
+                            {'scan': {'status': 'success', 'type': mod.REQUIRED_REPORTS[missing]},
+                             'vulnerabilities': [{}]}):
+                    (base/missing).write_text(json.dumps(bad))
+                    with self.assertRaises(ValueError):mod.load_findings(base)
+
+    def test_waivers_require_reviewer_reason_expiry_and_no_duplicates(self):
+        entry = {'fingerprint': 'r1@src/a.py:1', 'reason': '有证据的误报',
+                 'reviewed_by': 'liguangming', 'expires_at': '2099-01-01', 'recheck': '代码变化复核'}
+        for field in entry:
+            bad = dict(entry);bad.pop(field)
+            proc = self.run_gate([finding('High')], [bad])
+            self.assertEqual(proc.returncode, 1, proc.stdout)
+        for change in ({'reviewed_by': 'codex-agent'}, {'expires_at': 'bad'}, {'reason': ' '}):
+            self.assertEqual(self.run_gate([finding('High')], [dict(entry, **change)]).returncode, 1)
+        self.assertEqual(self.run_gate([finding('High')], [entry, entry]).returncode, 1)
+
     def test_ci_config_ships_adjudicator_reports_and_triage(self):
         """配置层把守：裁决作业声明要消费的三份报告，扫描端必须真的下载/存在。
 
@@ -95,14 +124,14 @@ class AdjudicationTests(unittest.TestCase):
     def test_waiver_with_reason_unblocks(self):
         proc = self.run_gate([finding('High', rule='ssrf', file='src/a.py', line=3)],
                              [{'fingerprint': 'ssrf@src/a.py:3', 'reason': '固定回环地址，无外部输入',
-                               'reviewed_by': 'liguangming', 'expires_at': '2099-01-01'}])
+                               'recheck': '边界变化时复查', 'reviewed_by': 'liguangming', 'expires_at': '2099-01-01'}])
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertIn('固定回环地址', proc.stdout)
 
     def test_expired_waiver_blocks(self):
         proc = self.run_gate([finding('High', rule='ssrf', file='src/a.py', line=3)],
                              [{'fingerprint': 'ssrf@src/a.py:3', 'reason': '已过期',
-                               'reviewed_by': 'liguangming', 'expires_at': '2020-01-01'}])
+                               'recheck': '边界变化时复查', 'reviewed_by': 'liguangming', 'expires_at': '2020-01-01'}])
         self.assertEqual(proc.returncode, 1, proc.stdout)
         self.assertIn('豁免已过期', proc.stdout)
 
@@ -110,7 +139,7 @@ class AdjudicationTests(unittest.TestCase):
         """代码里已经不再报出的条目必须删除，防止豁免清单只增不减。"""
         proc = self.run_gate([finding('Info')],
                              [{'fingerprint': 'gone@src/old.py:1', 'reason': '历史条目',
-                               'reviewed_by': 'liguangming', 'expires_at': '2099-01-01'}])
+                               'recheck': '边界变化时复查', 'reviewed_by': 'liguangming', 'expires_at': '2099-01-01'}])
         self.assertEqual(proc.returncode, 1, proc.stdout)
         self.assertIn('已失效条目', proc.stdout)
 
@@ -118,7 +147,7 @@ class AdjudicationTests(unittest.TestCase):
         """改动被保护的代码后行号变化，豁免自动失效，必须重新定性。"""
         proc = self.run_gate([finding('High', rule='ssrf', file='src/a.py', line=9)],
                              [{'fingerprint': 'ssrf@src/a.py:3', 'reason': '行号已漂移',
-                               'reviewed_by': 'liguangming', 'expires_at': '2099-01-01'}])
+                               'recheck': '边界变化时复查', 'reviewed_by': 'liguangming', 'expires_at': '2099-01-01'}])
         self.assertEqual(proc.returncode, 1, proc.stdout)
 
 
