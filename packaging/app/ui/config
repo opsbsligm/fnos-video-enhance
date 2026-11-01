@@ -1,0 +1,1 @@
+{".url":{"video-enhance.Application":{"title":"视频增强","desc":"本地插帧、超分与任务管理","icon":"images/icon_{0}.png","type":"iframe","microApp":true,"gatewaySocket":"app.sock","gatewayPrefix":"/app/video-enhance","url":"/app/video-enhance/","width":1280,"height":850,"allUsers":false,"control":{"accessPerm":"readonly","portPerm":"hidden","pathPerm":"hidden","fullUrlPerm":"hidden"}}}}

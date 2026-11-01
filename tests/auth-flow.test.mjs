@@ -1,0 +1,11 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {webcrypto} from 'node:crypto';
+import {pickerPaths,callbackPaths,authState} from '../src/auth-flow.mjs';
+test('授权成功路径',()=>assert.deepEqual(pickerPaths({code:0,data:['/vol2/1000/媒体']}),['/vol2/1000/媒体']));
+test('取消不报告成功',()=>{assert.deepEqual(pickerPaths(undefined),[]);assert.deepEqual(pickerPaths({code:0,data:[]}),[]);assert.deepEqual(pickerPaths({code:1,msg:'取消'}),[])});
+test('授权失败不静默',()=>assert.throws(()=>pickerPaths({code:403,msg:'拒绝授权'}),/拒绝授权/));
+test('忽略无效路径',()=>assert.deepEqual(pickerPaths({code:0,data:[1,'relative','/allowed']}),['/allowed']));
+test('独立网页成功回调',()=>assert.deepEqual(callbackPaths({status:'success',method:'pickSharedFile',appName:'video-enhance',path:['/allowed']}),['/allowed']));
+test('取消及错应用回调',()=>{assert.deepEqual(callbackPaths({status:'cancel'}),[]);assert.throws(()=>callbackPaths({status:'success',appName:'evil',method:'pickSharedFile'}));assert.throws(()=>callbackPaths({status:'error'}));});
+test('没有randomUUID也生成安全随机state',()=>{const crypto={getRandomValues:webcrypto.getRandomValues.bind(webcrypto)};const a=authState(crypto),b=authState(crypto);assert.match(a,/^[0-9a-f]{64}$/);assert.notEqual(a,b);});

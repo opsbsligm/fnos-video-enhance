@@ -1,0 +1,17 @@
+{
+  "name": "fnos-video-enhance",
+  "version": "0.3.7",
+  "private": true,
+  "scripts": {
+    "build": "esbuild src/frontend.js --bundle --minify --target=es2020 --outfile=src/www/app.js",
+    "test": "python3 -m unittest discover -s tests && node --test tests/*.test.mjs",
+    "test:py": "python3 -m unittest discover -s tests",
+    "test:frontend": "node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "@trimjs/web-app": "0.4.2"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12"
+  }
+}

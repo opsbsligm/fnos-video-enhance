@@ -1,0 +1,55 @@
+#!/bin/bash
+set -eu
+APP="${TRIM_APPDEST:-/var/apps/video-enhance/target}"
+VAR="${TRIM_PKGVAR:-/var/apps/video-enhance/var}"
+PIDFILE="$VAR/app.pid"
+mkdir -p "$VAR"
+status() {
+    [ -f "$PIDFILE" ] || return 1
+    local pid
+    pid=$(cat "$PIDFILE")
+    [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null && grep -aq "$APP/server.py" "/proc/$pid/cmdline"
+}
+case "${1:-}" in
+start)
+    status && exit 0
+    export PYTHONHOME="$APP/runtime"
+    export PYTHONPATH="$APP/runtime/lib/python3.11/site-packages"
+    export LD_LIBRARY_PATH="$APP/runtime/lib/native"
+    export TRIM_APPDEST="$APP" TRIM_PKGVAR="$VAR"
+    export OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2
+    # 成果直接产出在原片旁；自测源放应用私有 VAR 区。
+    VE_DEMO="$VAR/demo"
+    if [ ! -f "$VAR/gpu-policy.json" ]; then
+        printf '%s\n' '{"validated_dedicated_gpus":[],"reason":"生产保护未验收，GPU执行保持关闭"}' > "$VAR/gpu-policy.json"
+        chmod 600 "$VAR/gpu-policy.json"
+    fi
+    # 自带演示源不使用用户媒体，供无GPU抢占的功能验收。
+    if [ ! -f "$VE_DEMO/功能自测.mp4" ]; then
+        mkdir -p "$VE_DEMO"
+        "$APP/runtime/bin/ffmpeg" -nostdin -v error -y -f lavfi -i testsrc2=size=128x72:rate=24 -f lavfi -i sine=frequency=440:sample_rate=48000 -t 2 -c:v libx264 -threads 1 -pix_fmt yuv420p -c:a aac "$VE_DEMO/功能自测.mp4"
+    fi
+    # 日志有上限，避免长期运行填满数据盘。
+    if [ -f "$VAR/info.log" ] && [ "$(stat -c %s "$VAR/info.log")" -gt 4194304 ]; then mv "$VAR/info.log" "$VAR/info.log.1"; fi
+    # API与GPU监测正常优先级；非全功率worker由scheduler单独nice/ionice。
+    "$APP/runtime/bin/python3" "$APP/server.py" >> "$VAR/info.log" 2>&1 &
+    echo "$!" > "$PIDFILE"
+    for i in {1..30}; do
+        status && [ -S "$APP/app.sock" ] && exit 0
+        sleep 1
+    done
+    echo '启动失败，请检查info.log' >&2; exit 1
+    ;;
+stop)
+    if status; then
+        kill -TERM "$(cat "$PIDFILE")"
+        for i in {1..15}; do status || break; sleep 1; done
+        if status; then kill -KILL "$(cat "$PIDFILE")"; fi
+    fi
+    rm -f "$PIDFILE"
+    ;;
+status)
+    if status; then exit 0; else exit 3; fi
+    ;;
+*) exit 1 ;;
+esac
