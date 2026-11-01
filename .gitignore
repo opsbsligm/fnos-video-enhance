@@ -1,0 +1,18 @@
+# 依赖与构建产物
+node_modules/
+dist/
+
+# Python 运行时/缓存
+__pycache__/
+*.py[cod]
+.coverage
+coverage.xml
+
+# 应用运行时数据（任务库、工作目录、样片），禁止入库
+src/dev-data/
+
+# 手工回滚副本（各轮改造前留档，非源码）
+*.bak-*
+
+# 编辑器/系统
+.DS_Store
