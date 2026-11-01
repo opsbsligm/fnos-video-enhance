@@ -57,6 +57,41 @@ class AdjudicationTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertIn('安全裁决通过', proc.stdout)
 
+    def test_missing_analyzer_report_is_not_silence_but_failure(self):
+        """扫描器整体失联时必须失败：空目录里"读到 0 条"不等于没有漏洞。
+
+        实证过的静默通道：旧版本在没有任何报告时输出"（无发现）… 安全裁决通过"
+        并退出 0；只要 semgrep 作业没跑成或 artifacts 没被 needs 取到，门禁就变绿。
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            proc = subprocess.run(
+                [sys.executable, str(CI/'assess_sast_findings.py'), '--dir', str(base),
+                 '--triage', str(base/'none.json')],
+                capture_output=True, text=True)
+            self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+            self.assertIn('无法裁决', proc.stdout)
+            self.assertNotIn('安全裁决通过', proc.stdout)
+
+    def test_ci_config_ships_adjudicator_reports_and_triage(self):
+        """配置层把守：裁决作业声明要消费的三份报告，扫描端必须真的下载/存在。
+
+        踩过的坑：依赖扫描把 gl-dependency-scanning-report.json 只挂到 reports:，
+        没进 artifacts.paths；needs.artifacts:true 取的是 archive，于是裁决作业
+        拿不到它（pipeline 986 / job 6322）。豁免清单同样必须入库，否则门禁
+        读的是"不存在的文件"，等价于没有豁免通道。
+        """
+        self.assertTrue((CI/'sast-triage.json').exists(), '豁免清单必须入库')
+        ci = (ROOT/'.gitlab-ci.yml').read_text(encoding='utf-8')
+        block = ci.split('依赖漏洞扫描:', 1)[1].split('安全裁决门禁:', 1)[0]
+        paths = block.split('paths:', 1)[1].split(']', 1)[0]
+        for name in ('npm-audit.json', 'gl-dependency-scanning-report.json'):
+            self.assertIn(name, paths, f'{name} 必须列入 artifacts.paths，否则下游取不到')
+        # 压缩产物行号不可定位、判定口径由第三方 SDK 决定，必须排除产物保留源码。
+        semgrep = ci.split('semgrep-sast:', 1)[1].split('secret_detection:', 1)[0]
+        self.assertIn('src/www', semgrep, '扫描必须排除 esbuild 压缩产物目录')
+        self.assertIn('src/frontend.js', (CI/'sast-triage.json').read_text(encoding='utf-8'))
+
     def test_waiver_with_reason_unblocks(self):
         proc = self.run_gate([finding('High', rule='ssrf', file='src/a.py', line=3)],
                              [{'fingerprint': 'ssrf@src/a.py:3', 'reason': '固定回环地址，无外部输入',

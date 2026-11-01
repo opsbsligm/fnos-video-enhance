@@ -26,6 +26,13 @@ BLOCKING = {'critical', 'high', 'medium'}
 SEVERITY_ORDER = {'critical': 0, 'high': 1, 'medium': 2, 'low': 3, 'unknown': 4, 'info': 5}
 REPORTS = ('gl-sast-report.json', 'gl-secret-detection-report.json', 'gl-dependency-scanning-report.json')
 
+# 至少要读到这一份，否则等于"没扫也通过"。为什么是 SAST 而不是别的：本流水线的
+# semgrep-sast 是 allow_failure:false 的必经作业，也是唯一会产出 High/Medium 的
+# 分析器；它的 artifacts 缺失只可能是没跑成（作业失败/被取消/needs 配置写错），
+# 而不是"这个项目没有可扫代码"。实证：在空目录上运行旧版本门禁，输出
+# "（无发现）… 安全裁决通过"并退出 0——扫描器整体失联时门禁反而变绿。
+REQUIRED_REPORTS = ('gl-sast-report.json',)
+
 
 def fingerprint(finding: dict) -> str:
     """稳定指纹：规则 + 文件 + 行号。分析器不提供 fingerprint 字段，
@@ -73,9 +80,20 @@ def main() -> int:
     args = ap.parse_args()
 
     block = {s.strip().lower() for s in args.block.split(',') if s.strip()}
-    findings = load_findings(Path(args.dir))
+    base = Path(args.dir)
+    findings = load_findings(base)
     waivers = load_triage(Path(args.triage))
     today = datetime.date.today()
+
+    missing = [name for name in REQUIRED_REPORTS if not (base / name).exists()]
+    if missing:
+        present = [n for n in REPORTS if (base / n).exists()]
+        print(f"分析器报告缺失：{', '.join(missing)}；本目录只有："
+              f"{', '.join(present) or '（无任何报告）'}")
+        print("无法裁决：扫描作业未产出报告不等于没有漏洞。请确认 semgrep-sast 作业"
+              "已执行且其 artifacts 被本作业取到（needs 的 artifacts:true 取的是 archive，"
+              "作业里未列入 paths 的文件不会被下载）。")
+        return 1
 
     print(f"读取到 {len(findings)} 条扫描发现；阻断级别={sorted(block, key=lambda s: SEVERITY_ORDER.get(s, 9))}")
     used: set[str] = set()
