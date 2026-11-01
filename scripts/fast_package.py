@@ -7,7 +7,7 @@ with open(asset,'wb') as raw,gzip.GzipFile(fileobj=raw,mode='wb',compresslevel=1
   if p.is_symlink():raise RuntimeError('运行包不可含符号链接: '+str(p))
   if '__pycache__' in p.parts or p.name in ('.DS_Store','app.sock') or p.name.startswith('._'):continue
   t.add(p,arcname=str(p.relative_to(root/'app')),recursive=False)
-h=hashlib.md5()
+h=hashlib.md5(usedforsecurity=False)
 with open(asset,'rb') as f:
  for c in iter(lambda:f.read(1024**2),b''):h.update(c)
 manifest=root/'manifest';text=manifest.read_text()

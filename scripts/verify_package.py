@@ -10,7 +10,7 @@ import tarfile
 class DigestReader:
     def __init__(self, source):
         self.source = source
-        self.digest = hashlib.md5()
+        self.digest = hashlib.md5(usedforsecurity=False)
 
     def read(self, size=-1):
         data = self.source.read(size)
