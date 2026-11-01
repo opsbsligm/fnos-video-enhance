@@ -78,6 +78,7 @@ Python语法:
   rules: *always_on_mr_and_branch
 
 前端构建一致性:
+  extends: .node_toolchain
   stage: verify
   tags: [macos]
   script:
