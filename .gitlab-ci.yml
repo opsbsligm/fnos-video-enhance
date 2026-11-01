@@ -42,6 +42,17 @@ variables:
   # 安全扫描在 MR 流水线上也要跑：判定合并的是 MR 流水线，扫描必须在它上面出结果。
   AST_ENABLE_MR_PIPELINES: "true"
 
+# node 工具链作业共用：runner 由 launchd 启动，其 PATH 会命中
+# /usr/local/bin/node（2021 年的 v14），而 /opt/homebrew 安装的 npm 需要
+# node:path（node≥16），直接调用即 MODULE_NOT_FOUND（实证：pipeline 977 /
+# job 6243）。esbuild 的 shebang 是 `#!/usr/bin/env node`，所以仅用 npm 的
+# 绝对路径不够，必须把 /opt/homebrew/bin 前置到 PATH，让 npm 与 env 找到的
+# 是同一个 node；作业内打印实际版本，避免"静默用了另一个 node"再次发生。
+.node_toolchain:
+  before_script:
+    - export PATH="/opt/homebrew/bin:$PATH"
+    - echo "node=$(command -v node) $(node -v)"; echo "npm=$(command -v npm) $(npm -v)"
+
 # 安全扫描执行器 run_untagged=false，未打 tag 的作业会永久 pending；
 # 因此默认落到扫描执行器，本地工具链作业各自显式 tags: [macos]。
 default:
@@ -91,6 +102,7 @@ Python单测:
   rules: *always_on_mr_and_branch
 
 前端单测:
+  extends: .node_toolchain
   stage: test
   tags: [macos]
   timeout: 5m
