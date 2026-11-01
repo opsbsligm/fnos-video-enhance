@@ -34,9 +34,14 @@ class StoreTests(unittest.TestCase):
 
  def test_patch_upgrade_preserves_checkpoint_fingerprint(self):
   from version import VERSION, PIPELINE_VERSIONS, PIPELINE_TAG
-  self.assertEqual(VERSION,'0.3.7')
+  # 版本递增本身由 CI 的"版本一致性"门禁把关；这里要守的是另一件事：
+  # 补丁升级不得改变检查点指纹域，且历史版本必须留在可续跑集合里，
+  # 否则升级后用户已有的任务会被判成旧版、无法续跑。
+  self.assertRegex(VERSION, r'^\d+\.\d+\.\d+$')
   self.assertEqual(PIPELINE_TAG,'0.3.0-cfr-segments')
-  for old in ('0.3.4','0.3.6'):
+  self.assertIn(VERSION,PIPELINE_VERSIONS)
+  self.assertEqual(PIPELINE_VERSIONS[-1],VERSION)
+  for old in ('0.3.4','0.3.6',):
    self.assertIn(old,PIPELINE_VERSIONS)
    self.spec['pipeline_version']=old
    self.commit()

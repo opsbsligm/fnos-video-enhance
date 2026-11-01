@@ -30,10 +30,11 @@ async function start(inputs=['/media'],gpus=[]){
   const ctx={console,URLSearchParams,Set,Map,JSON,Date,Number,String,Error,Promise,Math,
     TrimApp:class {ready(){return new Promise(()=>{});}},
     submitPending:async()=>0,createLimiter,estimateRemaining,taskProgressText,
-    location:{pathname:'/app/video-enhance/'},
+    location:{pathname:'/app/video-enhance/',origin:'http://nas.local'},
     document:{getElementById:id=>nodes.get(id)||null,createElement:tag=>new Element(tag),querySelectorAll:()=>[],body:new Element()},
     window:{addEventListener(){}},setInterval(fn){ctx.poll=fn;},setTimeout(){},clearTimeout(){},
-    fetch:async url=>{calls.push(url);let data;
+    URL,
+    fetch:async (url,options)=>{ctx.lastRequestOptions=options;calls.push(url);let data;
       if(url.endsWith('/api/status'))data={version:'test',gpu:{gpus},dependency_profile:'test'};
       else if(url.endsWith('/api/directories'))data={inputs,shared:[],roles:{}};
       else if(url.includes('/api/browse?')){const path=new URLSearchParams(url.split('?')[1]).get('path');data={path,root:inputs.find(r=>path.startsWith(r)),entries:[]};}
@@ -43,7 +44,7 @@ async function start(inputs=['/media'],gpus=[]){
     }};
   vm.createContext(ctx);
   const source=readFileSync(new URL('../src/frontend.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'').replace('export function','function');
-  vm.runInContext(source+`\nglobalThis.inspect=()=>({current,currentRoot});globalThis.refreshApp=refresh;globalThis.browseApp=browse;globalThis.crumbs=renderCrumbs;globalThis.setSelection=(paths,files)=>{selected=new Set(paths);entries=files;updateSelBar();};`,ctx);
+  vm.runInContext(source+`\nglobalThis.inspect=()=>({current,currentRoot});globalThis.refreshApp=refresh;globalThis.browseApp=browse;globalThis.crumbs=renderCrumbs;globalThis.apiCall=api;globalThis.setSelection=(paths,files)=>{selected=new Set(paths);entries=files;updateSelBar();};`,ctx);
   // 等待入口的实际异步初始化链。
   await new Promise(resolve=>setImmediate(resolve));
   return {ctx,nodes,calls};
@@ -192,6 +193,30 @@ test('失败卡片显示可操作原因，技术日志完整保留且默认折�
  assert.equal(ctx.renderTaskDetail('等待调度','queued').textContent,'等待调度');
  assert.match(ctx.renderTaskDetail('No space left on device','failed').children[0].textContent,/存储空间不足/);
  const unknown='UnknownError: sample';assert.equal(ctx.renderTaskDetail(unknown,'failed').children[0].textContent,unknown);
+});
+
+// 中文提示词的大小写归一判定：'GPU采样' 归一后是 'gpu采样'，改写匹配方式时最容易回归这一点。
+test('失败原因归类对中文关键字大小写不敏感',async()=>{
+ const {ctx}=await start();
+ assert.match(ctx.renderTaskDetail('GPU采样监测过期','failed').children[0].textContent,/GPU监测暂不可用/);
+});
+
+// 接口层的安全边界：BASE 是常量，path 只能是本应用相对接口；
+// 任何指向其他主机/协议的 path 都必须在本机被拦下，不能发出去。
+test('接口请求只允许同源相对接口路径',async()=>{
+ const {ctx,calls}=await start();
+ await ctx.apiCall('/api/status');
+ assert.equal(ctx.lastRequestOptions.mode,'same-origin','浏览器必须阻止跨源请求');
+ assert.equal(ctx.lastRequestOptions.redirect,'error','禁止接口重定向扩展请求范围');
+ // 相对路径必须被解析成同源绝对地址：这就是"无法指向别的主机"的可核对证据。
+ assert.equal(calls[calls.length-1],'http://nas.local/app/video-enhance/api/status',
+   '相对接口应拼成同源绝对地址：'+calls.join(' '));
+ const baseline=calls.length; // start() 自身的初始化请求不计入本轮判定。
+ for(const bad of ['//evil.example/api','http://evil.example/api','/\\evil','/other/api/status']){
+  await assert.rejects(()=>ctx.apiCall(bad),/接口路径非法|非同源/,'应阻止：'+bad);
+ }
+ // 同源断言本身：绕过前缀白名单也必须被拦下（此处构造出跨主机但同前缀的输入）。
+ assert.equal(calls.length,baseline,'被阻止的请求不能发出去，实际多发 '+(calls.length-baseline)+' 个：'+calls.slice(baseline).join(' '));
 });
 
 

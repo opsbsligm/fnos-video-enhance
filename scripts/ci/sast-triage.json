@@ -1,0 +1,57 @@
+{
+  "schema": 1,
+  "notes": [
+    "本清单是 安全裁决门禁 的唯一豁免通道：每条必须有指纹、理由、到期日；过期即视为未豁免。",
+    "指纹 = 规则@文件:行号（见 assess_sast_findings.py）。行号变化会使条目失效；同一行内容变更仍须在 MR 对当前 HEAD 复核，",
+    "不存在'一次豁免永久有效'。已失效（当前扫描不再报出）的条目会让门禁失败，强制清理。",
+    "本文件由 codex 起草，批准生效以 MR 上 liguangming 的批准为准（批准绑定精确 HEAD SHA）。",
+    "已修代码消除、不在此登记的两类告警：",
+    "① src/www/app.js 的 SSRF 与弱随机告警：该文件是 esbuild 压缩产物，已在 .gitlab-ci.yml",
+    "   用 SAST_EXCLUDED_PATHS 仅排除 app.js 产物、保留 src/frontend.js 源码扫描；产物与源码一致性由",
+    "   前端构建一致性作业（scripts/ci/check_build_freshness.sh）把守。",
+    "② guard.py 的外呼面：已从 urllib 改为 http.client 且主机固定 127.0.0.1（commit f9ad902）。"
+  ],
+  "waivers": [
+    {
+      "fingerprint": "bandit.B303-1@scripts/fast_package.py:10",
+      "rule": "bandit.B303-1",
+      "severity": "medium",
+      "reason": "MD5 是飞牛官方 .fpk 包格式规定的 manifest.checksum 算法，不是本项目的选择：安装器按 MD5 校验 app.tgz，改成 SHA-256 会让官方安装器判校验失败。此处 MD5 只用于传输完整性自检，不承担防伪造/抗碰撞职责，代码已显式声明 hashlib.md5(usedforsecurity=False)。semgrep 移植版 bandit 不识别该声明（实证：pipeline 986 job 6317 在修复后仍报同一行）。",
+      "risk_if_wrong": "MD5 无法防止恶意碰撞或替换，只承担现有包格式兼容校验；分发真实性不由此摘要保证。",
+      "expires_at": "2027-05-01",
+      "reviewed_by": "liguangming",
+      "recheck": "飞牛官方包格式改用更强摘要算法时删除本条；或扫描器识别 usedforsecurity=False 后删除。"
+    },
+    {
+      "fingerprint": "bandit.B303-1@scripts/verify_package.py:13",
+      "rule": "bandit.B303-1",
+      "severity": "medium",
+      "reason": "同上：这里复算的是官方 manifest 里的 MD5，用于包验收（checksum_verified），不是安全边界。已声明 usedforsecurity=False。",
+      "risk_if_wrong": "MD5 无法防止恶意碰撞或替换，只承担现有包格式兼容校验；分发真实性不由此摘要保证。",
+      "expires_at": "2027-05-01",
+      "reviewed_by": "liguangming",
+      "recheck": "包格式摘要算法变更或扫描器识别 usedforsecurity=False 后删除。"
+    },
+    {
+      "fingerprint": "bandit.B303-1@scripts/wrap_asset.py:3",
+      "rule": "bandit.B303-1",
+      "severity": "medium",
+      "reason": "同上：写回 manifest.checksum 的摘要算法由飞牛包格式固定为 MD5，已声明 usedforsecurity=False。",
+      "risk_if_wrong": "MD5 无法防止恶意碰撞或替换，只承担现有包格式兼容校验；分发真实性不由此摘要保证。",
+      "expires_at": "2027-05-01",
+      "reviewed_by": "liguangming",
+      "recheck": "包格式摘要算法变更或扫描器识别 usedforsecurity=False 后删除。"
+    },
+    {
+      "fingerprint": "nodejs_scan.javascript-ssrf-rule-node_ssrf@src/frontend.js:16",
+      "rule": "nodejs_scan.javascript-ssrf-rule-node_ssrf",
+      "severity": "high",
+      "reason": "误报，且分类本身不成立：这是浏览器端代码，不存在服务端请求伪造（SSRF）语义。该规则只看'变量传入 fetch'，不建模同一函数内已有的两道约束——① path 必须以 '/api/' 开头且拒绝 '//' 与 '/\\'；② new URL 之后断言 url.origin === location.origin，非同源直接抛错。BASE 为常量 '/app/video-enhance'，路径全部是代码内字面量，没有用户可控的绝对 URL 入口。规则不识别断言之所以不改成更隐蔽的写法：那是骗扫描器，不是消除风险。 请求同时设置 mode=same-origin 与 redirect=error，浏览器禁止跨源和重定向。",
+      "risk_if_wrong": "若哪天出现用户可控值直接进入 api(path) 的调用点，最坏是同站内被拼接出一个意外接口路径；跨站出站在 origin 断言处即终止。",
+      "expires_at": "2027-05-01",
+      "reviewed_by": "liguangming",
+      "evidence": "tests/frontend-init.test.mjs:214 断言：非法路径与非同源地址必须被拒绝（该测试在前端单测作业中执行）。",
+      "recheck": "api() 的调用点出现任何外部可控拼接、或扫描器能识别 origin 断言时重新定性。"
+    }
+  ]
+}

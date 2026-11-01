@@ -40,6 +40,38 @@ class GuardTests(unittest.TestCase):
   for bad in ('NaN','Inf','1e309','-1'):
    with self.assertRaises(ValueError):guard.parse_metrics(text.replace('requests_processing 0','requests_processing '+bad))
   with self.assertRaises(ValueError):guard.parse_metrics('')
+ def test_metrics_target_is_loopback_only_and_never_follows_redirect(self):
+  # 安全边界：监测请求的主机必须是常量回环地址，端口才来自部署配置；
+  # 非 200（含 3xx 重定向）一律判失败，绝不二次跳转，否则被监测端就能把应用
+  # 引到内网其他地址，那才是真正可用的 SSRF 入口。
+  class Resp:
+   def __init__(self,status,body=b''):self.status=status;self._body=body
+   def read(self,_=-1):return self._body
+  class Conn:
+   instances=[]
+   def __init__(self,host,port,timeout=None):self.host=host;self.port=port;Conn.instances.append(self);self.requested=None;self.closed=False
+   def request(self,method,path):self.requested=(method,path)
+   def getresponse(self):return self.response
+   def close(self):self.closed=True
+  body='\n'.join(f'llamacpp:{k} 1' for k in guard.METRICS).encode()
+  with patch.object(guard.http.client,'HTTPConnection',Conn):
+   Conn.instances.clear();Conn.response=Resp(200,body)
+   out=guard.read_target(dict(name='llama',port=8081))
+   self.assertEqual(out['rpc_ms'].__class__,float)
+   self.assertEqual(Conn.instances[0].host,'127.0.0.1')
+   self.assertEqual(Conn.instances[0].port,8081)
+   self.assertEqual(Conn.instances[0].requested,('GET','/metrics'))
+   self.assertTrue(Conn.instances[0].closed)
+   # 3xx 不跟随：抛错且没有第二个连接（没有跟随跳转再发一次）
+   Conn.response=Resp(302)
+   Conn.instances.clear()
+   with self.assertRaises(ValueError):guard.read_target(dict(name='llama',port=8081))
+   self.assertEqual(len(Conn.instances),1,'重定向不得触发第二次请求')
+   for bad in (500,404):
+    Conn.response=Resp(bad);Conn.instances.clear()
+    with self.assertRaises(ValueError):guard.read_target(dict(name='llama',port=8081))
+  for bad in (80,'0','65536','1023'):
+   with self.assertRaises(ValueError):guard.read_target(dict(name='llama',port=bad))
  def test_gpu_timestamp_tracks_measurement_not_metrics_start(self):
   with patch.object(guard.subprocess,'check_output',side_effect=['G,P100,16384,12049,78,90\n','G,1,llama,12049\n']),patch.object(guard.time,'time',return_value=123):
    result=guard.raw_snapshot()

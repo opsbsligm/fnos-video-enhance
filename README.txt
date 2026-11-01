@@ -71,3 +71,10 @@ GPU 全功率（2026-10-10，0.3.3，已部署）：
 执行策略：全功率（占空/优先级让步解除，仅温度≥85℃与显存余量<1GiB安全闸门），status回填execution_policy与gpu.available=true（P100-16G）。
 回滚：恢复preupgrade-20261014各文件 + releases内旧fpk走同一路径重装。
 遗留：f8cdb9bc旧坏件成品待用户决定重跑或手动处理（app不擅删用户目录文件）；明暗主题/窄屏真机高清截图验收仍缺。
+
+安全闭环与版本收口（2026-11-01，0.3.8 源码，未发布 FPK）：
+GitLab：https://www.bsligm.com:8445/codex/fnos-video-enhance；codex 开发，liguangming 审查批准合并。
+修复/加固：前端接口同源校验；错误提示改为子串归类；监测请求固定回环且拒绝重定向；包兼容 MD5 显式声明非安全用途。
+CI：版本一致性、Python语法/单测、前端构建逐字节核验/单测、打包清单、SAST、密钥和 npm 依赖扫描、安全裁决。三份安全报告均强制存在、成功且可解析；依赖报告按实例官方 schema 15.2.4 校验。Critical/High/Medium/Unknown 阻断，误报/兼容例外逐项注明 liguangming 裁决、理由、重查条件和到期日。行号变化、过期、重复及已失效条目均阻断；审查批准绑定精确 HEAD。
+审查例外：三处 MD5 为现有 fnOS 包格式兼容校验，不作为防篡改证明；浏览器 fetch 告警在当前同源边界下判误报。仅对构建可复现的 src/www/app.js 排除重复 SAST，自有源码、其余静态资源仍在扫描范围，第三方 npm 依赖由 npm audit 覆盖。
+边界：本次是源码/CI交付；NAS 外置 PyTorch/CUDA/FFmpeg 运行包未纳入此 npm 扫描，不宣称 FPK 全供应链验收。上线需另外生成运行包清单、漏洞核查、fnpack 打包、备份升级和真机抽帧验收。线上0.3.7继续运行，PIPELINE_TAG 保持0.3.0-cfr-segments。

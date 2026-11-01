@@ -1,6 +1,6 @@
 import gzip,hashlib,re,sys,tarfile
 from pathlib import Path
-root,asset,out=map(Path,sys.argv[1:]);h=hashlib.md5()
+root,asset,out=map(Path,sys.argv[1:]);h=hashlib.md5(usedforsecurity=False)
 with open(asset,'rb') as f:
  for chunk in iter(lambda:f.read(1024**2),b''):h.update(chunk)
 p=root/'manifest';text=re.sub(r'^checksum\s*=.*$','',p.read_text(),flags=re.M).rstrip()+'\nchecksum = '+h.hexdigest()+'\n';p.write_text(text)

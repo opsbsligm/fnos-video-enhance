@@ -9,13 +9,16 @@ import re
 import subprocess
 import threading
 import time
-import urllib.request
+import http.client
 from concurrent.futures import ThreadPoolExecutor
 
 VAR = Path(os.environ.get('TRIM_PKGVAR', str(Path(__file__).parent/'dev-data')))
 STATE = VAR/'monitor.json'
 POLICY = VAR/'gpu-policy.json'
 METRICS = ('requests_processing','requests_deferred','prompt_tokens_total','tokens_predicted_total')
+# 推理监测只允许访问本机回环；主机名固定为常量，不接受任何配置项，
+# 因此不存在"配置里写个别的地址就能让应用去访问内网其他服务"的路径。
+METRICS_HOST = '127.0.0.1'
 
 class ProtectedWork(RuntimeError):
     pass
@@ -56,9 +59,17 @@ def read_target(target):
     port=int(target['port'])
     if not 1024<=port<=65535:raise ValueError('推理端口不允许')
     before=time.monotonic()
-    with urllib.request.urlopen(f'http://127.0.0.1:{port}/metrics',timeout=.6) as r:
-        if r.status!=200:raise ValueError('metrics失败')
+    # 用 http.client 而不是 urllib.urlopen：固定主机为回环，且**不跟随重定向**。
+    # urlopen 会对被监测端返回的 3xx 再次发起请求，重定向目标由对端决定，
+    # 那才是真正的出站入口；这里只要 200，其他状态一律判失败。
+    conn=http.client.HTTPConnection(METRICS_HOST,port,timeout=.6)
+    try:
+        conn.request('GET','/metrics')
+        r=conn.getresponse();status=r.status
+        if status!=200:raise ValueError('metrics失败')
         body=r.read(131072).decode()
+    finally:
+        conn.close()
     return dict(name=str(target['name']),port=port,rpc_ms=round((time.monotonic()-before)*1000,2),**parse_metrics(body))
 
 def evaluate(gpu,p,inference,own_pid=None,now=None):

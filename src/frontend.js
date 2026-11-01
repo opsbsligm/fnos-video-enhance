@@ -9,7 +9,11 @@ async function createJob(payload){const fingerprint=JSON.stringify(payload);let 
 let status,dirs,current='',currentRoot='',entries=[],selected=new Set(),operation='interpolate',toastTimer,submitting=false,preflightBlocked=false,preflightGeneration=0;
 function el(tag,text,cls){const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;}
 function toast(text){if(!$('toast'))return; $('toast').textContent=text;$('toast').classList.remove('hidden');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.add('hidden'),7000);}
-async function api(path,body){const r=await fetch(BASE+path,{credentials:'same-origin',headers:body?{'Content-Type':'application/json','X-VE-CSRF':status?.csrf||''}:{},method:body?'POST':'GET',body:body?JSON.stringify(body):undefined});let j;try{j=await r.json();}catch{throw Error('应用服务暂时未返回有效数据，请稍后重试');}if(!r.ok)throw Error(j.error||'请求失败');return j;}
+async function api(path,body){if(!path.startsWith('/api/')||path.startsWith('//')||path.startsWith('/\\'))throw Error('接口路径非法，请求已阻止');const url=new URL(BASE+path,location.origin);
+// 同源断言：本应用只调用自己的后端，任何被解析到其他主机的地址都在此终止，
+// 这样即使上面的白名单判定被绕过，也不存在 outbound 请求。
+if(url.origin!==location.origin)throw Error('接口地址非同源，请求已阻止');
+const r=await fetch(url.href,{mode:'same-origin',redirect:'error',credentials:'same-origin',headers:body?{'Content-Type':'application/json','X-VE-CSRF':status?.csrf||''}:{},method:body?'POST':'GET',body:body?JSON.stringify(body):undefined});let j;try{j=await r.json();}catch{throw Error('应用服务暂时未返回有效数据，请稍后重试');}if(!r.ok)throw Error(j.error||'请求失败');return j;}
 function page(name){for(const p of document.querySelectorAll('.page'))p.classList.toggle('hidden',p.id!==name);for(const b of document.querySelectorAll('nav button')){const active=b.dataset.page===name;b.classList.toggle('active',active);if(active)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');}$('page-title').textContent=({library:'媒体资源',jobs:'任务中心',directories:'目录授权',settings:'运行设置'})[name];if(name==='jobs')loadJobs().catch(e=>toast(e.message));}
 function options(id,values,label=x=>x){const select=$(id),before=select.value;select.replaceChildren();for(const value of values){const o=el('option',label(value));o.value=typeof value==='string'?value:value.uuid;select.append(o);}if([...select.options].some(x=>x.value===before))select.value=before;}
 async function refresh(){status=await api('/api/status');const bn=$('banner');if(bn)bn.hidden=true;$('dependencies').textContent=status.dependency_profile;renderPolicy();renderExecutionHint();$('brand-meta').textContent='版本 '+status.version+' · SDR / CFR';options('gpu',status.gpu.gpus,g=>g.name+' · '+g.temperature+'℃');renderGpu();await loadDirectories(true);await loadJobs();}
@@ -80,7 +84,10 @@ function renderTaskDetail(detail,state){
   if(!['failed','interrupted'].includes(state))return el('p',detail,'detail');
   const box=el('div',undefined,'task-error');
   const first=String(detail).split('\n')[0];
-  const hint=/PermissionError|Permission denied/.test(detail)?'成品目录不可写。请检查目录用途及应用账号写入权限后再续跑。':/No space left|ENOSPC/.test(detail)?'存储空间不足。请释放空间后再续跑。':/GPU采样|监测不可用|监测过期/.test(detail)?'GPU监测暂不可用。请确认监测恢复后再续跑。':first;
+  // 固定子串匹配而不是正则：detail 是任务日志原文，长度不可控；正则回溯在长日志上会变成同步卡顿，
+  // 也让扫描持续报 ReDoS。这三条判定本身只是字面量归类，不需要正则表达力。
+  const fault=String(detail).toLowerCase();
+  const hint=fault.includes('permissionerror')||fault.includes('permission denied')?'成品目录不可写。请检查目录用途及应用账号写入权限后再续跑。':fault.includes('no space left')||fault.includes('enospc')?'存储空间不足。请释放空间后再续跑。':fault.includes('gpu采样')||fault.includes('监测不可用')||fault.includes('监测过期')?'GPU监测暂不可用。请确认监测恢复后再续跑。':first;
   box.append(el('p',hint,'err-detail'));
   const log=el('details',undefined,'error-log');
   log.append(el('summary','查看技术详情'),el('pre',detail));box.append(log);return box;

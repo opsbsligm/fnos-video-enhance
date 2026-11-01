@@ -1,6 +1,6 @@
 {
   "name": "fnos-video-enhance",
-  "version": "0.3.7",
+  "version": "0.3.8",
   "private": true,
   "scripts": {
     "build": "esbuild src/frontend.js --bundle --minify --target=es2020 --outfile=src/www/app.js",
@@ -12,6 +12,7 @@
     "@trimjs/web-app": "0.4.2"
   },
   "devDependencies": {
+    "ajv": "8.20.0",
     "esbuild": "0.25.12"
   }
 }
