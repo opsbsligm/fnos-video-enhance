@@ -13,7 +13,7 @@ test('操作说明使用可读文字色，飞牛装饰令牌保持不变',()=>{
 
 // 运行实际前端入口，覆盖静态HTML与事件绑定、首次目录加载之间的契约。
 class Element {
-  constructor(tag='div'){this.tag=tag;this.dataset={};this.style={};this.children=[];this._value='';this.textContent='';this.disabled=false;this.classList={toggle(){},add(){},remove(){}};}
+  constructor(tag='div'){this.tag=tag;this.dataset={};this.style={};this.children=[];this._value='';this.textContent='';this.disabled=false;this.classList=new ClassList();}
   get options(){return this.children;}
   get value(){return this._value || (this.tag==='select'?this.children[0]?.value||'':'');}
   set value(v){this._value=v;}
@@ -22,6 +22,7 @@ class Element {
   setAttribute(){}
   querySelector(){return this.paragraph??=new Element('p');}
 }
+class ClassList{constructor(){this.s=new Set();}add(...c){c.forEach(x=>this.s.add(x));}remove(...c){c.forEach(x=>this.s.delete(x));}contains(c){return this.s.has(c);}toggle(c,f){if(f===undefined)f=!this.s.has(c);f?this.s.add(c):this.s.delete(c);return f;}}
 async function start(inputs=['/media'],gpus=[]){
   const html=readFileSync(new URL('../src/www/index.html',import.meta.url),'utf8');
   const nodes=new Map([...html.matchAll(/<(\w+)[^>]*\bid="([^"]+)"/g)].map(m=>[m[2],new Element(m[1])]));
@@ -44,7 +45,7 @@ async function start(inputs=['/media'],gpus=[]){
     }};
   vm.createContext(ctx);
   const source=readFileSync(new URL('../src/frontend.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'').replace('export function','function');
-  vm.runInContext(source+`\nglobalThis.inspect=()=>({current,currentRoot});globalThis.refreshApp=refresh;globalThis.browseApp=browse;globalThis.crumbs=renderCrumbs;globalThis.apiCall=api;globalThis.setSelection=(paths,files)=>{selected=new Set(paths);entries=files;updateSelBar();};`,ctx);
+  vm.runInContext(source+`\nglobalThis.inspect=()=>({current,currentRoot});globalThis.refreshApp=refresh;globalThis.browseApp=browse;globalThis.crumbs=renderCrumbs;globalThis.apiCall=api;globalThis.setSelection=(paths,files)=>{selected=new Set(paths);entries=files;updateSelBar();};globalThis.deriveNameFn=deriveName;globalThis.selectModeFn=selectMode;`,ctx);
   // 等待入口的实际异步初始化链。
   await new Promise(resolve=>setImmediate(resolve));
   return {ctx,nodes,calls};
@@ -248,4 +249,15 @@ test('任务轮询保留技术详情展开状态，并拒绝过期响应覆盖�
  await ctx.loadJobs();
  release({ok:true,json:async()=>[job('old','old.mp4')]});await old;
  assert.equal(nodes.get('tasks').children[0].children[0].children[0].textContent,'latest.mp4');
+});
+test('去噪修复档：产物名带 AI修复、行显隐正确',async()=>{
+ const {ctx,nodes}=await start();
+ ctx.selectModeFn('denoise');
+ assert.equal(ctx.deriveNameFn('/media/sample.mp4','denoise',2,60),'sample[AI修复].mkv');
+ assert.equal(nodes.get('fps-row').classList.contains('hidden'),true);
+ assert.equal(nodes.get('scale-row').classList.contains('hidden'),true);
+ ctx.selectModeFn('both');
+ assert.equal(ctx.deriveNameFn('/media/sample.mp4','both',2,60),'sample[AI超分×2·60fps].mkv');
+ assert.equal(nodes.get('fps-row').classList.contains('hidden'),false);
+ assert.equal(nodes.get('scale-row').classList.contains('hidden'),false);
 });

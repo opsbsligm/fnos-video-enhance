@@ -193,7 +193,7 @@ def main():
         offset=round(float(fps)*spec['start_seconds']) if spec['preview'] else 0
         count=min(count-offset,max(1,round(float(fps)*spec['preview_seconds']))) if spec['preview'] else count
         if count<=0:raise RuntimeError('样片起点无视频帧')
-        do_sr=spec['mode'] in ('upscale','both');do_fi=spec['mode'] in ('interpolate','both')
+        do_sr=spec['mode'] in ('upscale','both','denoise');do_fi=spec['mode'] in ('interpolate','both')
         target=Fraction(spec['target_fps']) if do_fi else fps
         if do_fi and target<=fps:raise RuntimeError('插帧目标必须高于原帧率')
         total=round(Fraction(count,1)/fps*target)
@@ -201,7 +201,7 @@ def main():
         width,height=video['width'],video['height'];proxy=not gpu and spec['preview']
         if proxy and width>320:height=max(2,round(height*320/width/2)*2);width=320
         out_width,out_height=width,height
-        if do_sr:
+        if do_sr and spec['mode']!='denoise':
             factor=min(spec['scale'],3840/width,2160/height)
             if factor<=1:raise RuntimeError('源已达到输出尺寸上限')
             out_width=max(2,int(width*factor)//2*2);out_height=max(2,int(height*factor)//2*2)
@@ -302,7 +302,7 @@ def main():
             reader=Frames(spec,src_fd,offset+index,fps,width,height,proxy,video['index']);a=reader.read(np)
             if index+1<count:b=reader.read(np)
         chunk_frames=max(1,min(120,int(spec.get('chunk_frames',12))))
-        stage='双增强（插帧+超分）' if do_sr and do_fi else ('超分' if do_sr else '插帧')
+        stage='双增强（插帧+超分）' if do_sr and do_fi else ('去噪修复' if spec['mode']=='denoise' else ('超分' if do_sr else '插帧'))
         with torch.inference_mode():
             while checkpoint['frames_done']<total:
                 check();part_start=checkpoint['frames_done'];part_end=min(total,part_start+chunk_frames)

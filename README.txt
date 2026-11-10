@@ -78,3 +78,16 @@ GitLab：https://www.bsligm.com:8445/codex/fnos-video-enhance；codex 开发，l
 CI：版本一致性、Python语法/单测、前端构建逐字节核验/单测、打包清单、SAST、密钥和 npm 依赖扫描、安全裁决。三份安全报告均强制存在、成功且可解析；依赖报告按实例官方 schema 15.2.4 校验。Critical/High/Medium/Unknown 阻断，误报/兼容例外逐项注明 liguangming 裁决、理由、重查条件和到期日。行号变化、过期、重复及已失效条目均阻断；审查批准绑定精确 HEAD。
 审查例外：三处 MD5 为现有 fnOS 包格式兼容校验，不作为防篡改证明；浏览器 fetch 告警在当前同源边界下判误报。仅对构建可复现的 src/www/app.js 排除重复 SAST，自有源码、其余静态资源仍在扫描范围，第三方 npm 依赖由 npm audit 覆盖。
 边界：本次是源码/CI交付；NAS 外置 PyTorch/CUDA/FFmpeg 运行包未纳入此 npm 扫描，不宣称 FPK 全供应链验收。上线需另外生成运行包清单、漏洞核查、fnpack 打包、备份升级和真机抽帧验收。线上0.3.7继续运行，PIPELINE_TAG 保持0.3.0-cfr-segments。
+
+去噪修复模式与UI卡片化（2026-11-10，0.3.9，已部署并POC验收）：
+新增第四种增强方式「去噪修复」：RealESRGAN 4×上采样推理再缩回源尺寸，清除块状伪影/噪点/JPEG压缩痕迹，分辨率与帧率不变；成品命名 原片名[AI修复].mkv。
+后端：media_plan.MODES 加 denoise，plan() 原生尺寸修复（不改 ow/oh/ofps）；worker do_sr 含 denoise 且跳过放大计算，stage 显示「去噪修复」。
+前端：增强方式从顶部 seg 组移入提交对话框，改 2×2 卡片网格（插帧/超分/去噪修复/双增强），窄屏单列；帧率/倍率行按所选模式显隐（applyModeRows）；对话框 520→560px；四模式均有独立文案说明。
+POC验收（真机 P100）：demo 源 4K双增强自测-1080p24.mp4（1920×1080@24）→ 样片-4K双增强自测-1080p24[AI修复].mkv，48帧 162.8s 完成，逐帧解码校验通过，1920×1080@24 保持；抽帧目检与源场景一致无撕裂，PSNR y:32.6/average:34.3（去噪改图重编码合理区间）。
+request_id 发现：服务端校验 64 位小写 hex（uuid4），与前端 authState 生成的 32 字节随机 hex 对齐；API 直调若带 request_id 须用 64 hex（不带则由服务端自动生成）。
+测试：python unittest 95 项、node --test 36 项全绿；esbuild app.js 63.4kb 逐字节可复现。
+版本收口：version.py/manifest/package.json/index.html 资源引用同步 0.3.9；PIPELINE_TAG 保持 0.3.0-cfr-segments（检查点兼容），PIPELINE_VERSIONS 追加 0.3.9。
+部署：构建目录 tar 分步同步（nohup/setsid 后台脚本在此会话环境不可靠，已验证踩坑）→ fnpack build 成功；releases/video-enhance-0.3.9.fpk（3051194863B，md5=5311b9d1ee9b9857c328ea417fac70e9）；verify_package 全过。升级合同 stop→uninstall→install-fpk -v 2→start（start 报 10500 但 25s 后 running，fnOS 行为）；升级前备份 /vol2/@appdata/video-enhance-preupgrade-20261110/（tasks.sqlite md5=5475db0438fbc310af9457355da339ec）。
+验收：NAS 现场 version=0.3.9、directories.json 保留；GPU 当时被 WeKnora 占用与本 app 无关。
+回滚：releases 内旧 fpk + preupgrade-20261110 备份走同一升级合同。
+遗留：ec3dfc13（异星迷航 4K 双增强整片，67.9%）升级后 failed「未获应用目录授权」，实际 test -w 可写，疑升级中断副作用，待任务中心续跑验证；明暗主题/窄屏真机高清截图验收仍缺。

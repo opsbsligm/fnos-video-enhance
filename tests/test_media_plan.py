@@ -18,6 +18,10 @@ class MediaTests(unittest.TestCase):
   self.assertFalse(plan(dict(width=3840,height=2160,fps=24),'both',60,2)['supported'])
   self.assertFalse(plan(dict(width=1280,height=720,fps=60),'both',60,2)['supported'])
  def test_noop(self):self.assertFalse(plan(dict(width=3840,height=2160,fps=60),'interpolate',60)['supported']);self.assertFalse(plan(dict(width=3840,height=2160,fps=24),'upscale')['supported'])
+ def test_denoise(self):
+  p=plan(dict(width=1280,height=720,fps=24),'denoise',60,2)
+  self.assertTrue(p['supported']);self.assertEqual((p['output_width'],p['output_height'],p['output_fps']),(1280,720,24))
+  self.assertEqual(derive_output_name('/a/b/c.mp4','denoise',2,60),'c[AI修复].mkv')
  def test_invalid(self):
   with self.assertRaises(ValueError):plan(dict(width=1280,height=720,fps=24),'bad')
  def test_output_name(self):
