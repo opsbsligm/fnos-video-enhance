@@ -1,7 +1,7 @@
 import sys,unittest
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'src'))
-from media_plan import video_support,plan,derive_output_name
+from media_plan import video_support,plan,derive_output_name,MODES
 class MediaTests(unittest.TestCase):
  def video(self,**kw):return dict(width=1280,height=720,avg_frame_rate='24/1',r_frame_rate='24/1',**kw)
  def test_supported(self):self.assertEqual(video_support(self.video()),[])
@@ -22,6 +22,11 @@ class MediaTests(unittest.TestCase):
   p=plan(dict(width=1280,height=720,fps=24),'denoise',60,2)
   self.assertTrue(p['supported']);self.assertEqual((p['output_width'],p['output_height'],p['output_fps']),(1280,720,24))
   self.assertEqual(derive_output_name('/a/b/c.mp4','denoise',2,60),'c[AI修复].mkv')
+ def test_denoise_block(self):
+  p=plan(dict(width=1280,height=720,fps=24),'denoise_block',60,2)
+  self.assertTrue(p['supported']);self.assertEqual((p['output_width'],p['output_height'],p['output_fps']),(1280,720,24))
+  self.assertEqual(derive_output_name('/a/b/c.mp4','denoise_block',2,60),'c[AI去块].mkv')
+  self.assertIn('denoise_block',MODES)
  def test_invalid(self):
   with self.assertRaises(ValueError):plan(dict(width=1280,height=720,fps=24),'bad')
  def test_output_name(self):
