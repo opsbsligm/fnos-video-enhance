@@ -1,4 +1,4 @@
-视频增强 0.3.3：HOMELAB内部预览版（安装版=0.3.3，2026-10-10 已部署并验收；历史：0.1.0首发→0.3.1版本收口→0.3.2完成语义/文案→0.3.3 GPU全功率）
+视频增强 0.3.9：HOMELAB内部预览版（安装版=0.3.9，2026-11-10 已部署并POC验收；历史：0.1.0首发→0.3.1版本收口→0.3.2完成语义/文案→0.3.3 GPU全功率→0.3.4产物简化→0.3.5/0.3.6调试修复→0.3.7 fd超限→0.3.8安全闭环→0.3.9去噪修复+UI卡片化）
 
 架构：飞牛FPK + package独立账户 + 统一网关Unix socket + 系统目录授权/用户ACL + SQLite任务库 + 独立模型进程。
 前端参考飞牛影视/音乐的使用模式：媒体资源、任务中心、目录授权、运行设置。不是它们的私有代码。
@@ -90,4 +90,11 @@ request_id 发现：服务端校验 64 位小写 hex（uuid4），与前端 auth
 部署：构建目录 tar 分步同步（nohup/setsid 后台脚本在此会话环境不可靠，已验证踩坑）→ fnpack build 成功；releases/video-enhance-0.3.9.fpk（3051194863B，md5=5311b9d1ee9b9857c328ea417fac70e9）；verify_package 全过。升级合同 stop→uninstall→install-fpk -v 2→start（start 报 10500 但 25s 后 running，fnOS 行为）；升级前备份 /vol2/@appdata/video-enhance-preupgrade-20261110/（tasks.sqlite md5=5475db0438fbc310af9457355da339ec）。
 验收：NAS 现场 version=0.3.9、directories.json 保留；GPU 当时被 WeKnora 占用与本 app 无关。
 回滚：releases 内旧 fpk + preupgrade-20261110 备份走同一升级合同。
-遗留：ec3dfc13（异星迷航 4K 双增强整片，67.9%）升级后 failed「未获应用目录授权」，实际 test -w 可写，疑升级中断副作用，待任务中心续跑验证；明暗主题/窄屏真机高清截图验收仍缺。
+遗留：明暗主题/窄屏真机高清截图验收仍缺（Safari 截图工具只返回缩略图）。
+
+系统授权列表为空的授权回归修复（2026-11-10，热修已部署，MR !3 走 CI 门禁后随 0.3.10 收口）：
+根因：0.3.9 升级（uninstall→install）后飞牛 getSharedAccessibleFolders 返回空列表，而 authorized_roots 只认系统 API 路径，directories.json 已配置目录（首次授权时已经过飞牛 ACL 验证）全部被过滤；ec3dfc13（异星迷航 4K 双增强整片，67.9%，检查点完好）续跑即 failed「未获应用目录授权」。现场直证：checkUserACL 对 /vol2/1000/媒体 读/写/删全 true，system API 返回 []。
+修复：authorized_roots 以系统 API 路径与 directories.json 已配置路径的并集作候选（role 语义不变）；GET /api/directories 的 shared 列表同取并集（目录授权页不再空白）；POST /api/directories 已配置路径允许重新设置用途，新路径仍需系统 API 确认（原安全语义保留）。
+验证：python3.11 96 项全绿（含新增回归 test_configured_directories_survive_empty_system_api）；NAS 真机热修（server.py 备份 server.py.bak-authfix-20261110）重启后 /api/directories 恢复返回 4 个已配置目录（typo 目录 /vol2/1000/Dowanloads 不存在被 open_beneath 自动过滤）；ec3dfc13 续跑受理→running，worker 起、帧数推进（220944→221088，68.0%），GPU 79℃ 低于 95℃ 闸门。
+回滚：cp server.py.bak-authfix-20261110 server.py 并重启应用（改动仅授权候选集来源，无数据结构变化）。
+已知坏件处置：f8cdb9bc（小月喵-01 双增强，flip 撕裂修复前产物）任务已从库清理；源片小月喵-01.mp4 已不在 NO_SAY（用户侧仅留 -02 与坏件成品 611MB），成品留原位待用户决定是否重跑或删除。
