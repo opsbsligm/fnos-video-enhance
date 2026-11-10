@@ -128,6 +128,32 @@ class IntegrationTests(unittest.TestCase):
             self.assertEqual(result['output_dir'],str(self.media))
             self.assertEqual(result['output_fps'],60)
 
+    def test_configured_directories_survive_empty_system_api(self):
+        # 回归：飞牛系统 API 升级后返回空列表时，应用内已配置且 ACL 通过的目录仍可用，
+        # 否则续跑任务会被“未获应用目录授权”误杀（0.3.9 升级后异星迷航任务即此症状）。
+        import server
+        roles_map={str(self.media):'both',str(self.out):'both'}
+        with patch.object(server.platform_api,'shared_roots',return_value=[]), \
+             patch.object(server,'roles',return_value=roles_map):
+            self.assertEqual(sorted(server.authorized_roots(1000)),sorted([str(self.media),str(self.out),str(server.VAR/'demo')]))
+            self.assertEqual(sorted(server.authorized_roots(1000,write=True)),sorted([str(self.media),str(self.out),str(server.VAR/'demo')]))
+            d=self.get('/api/directories')
+            self.assertIn(str(self.media),d['shared'])
+            self.assertIn(str(self.media),d['inputs'])
+            self.assertIn(str(self.out),d['outputs'])
+        # 未配置的目录在系统列表为空且无角色时不可用：
+        with patch.object(server.platform_api,'shared_roots',return_value=[]), \
+             patch.object(server,'roles',return_value={}):
+            self.assertEqual(server.authorized_roots(1000),[str(server.VAR/'demo')])
+        # 已配置目录允许直接改用途（飞牛系统 API 无该路径时）：
+        csrf=self.get('/api/status')['csrf']
+        with patch.object(server.platform_api,'shared_roots',return_value=[]), \
+             patch.object(server,'roles',return_value=roles_map):
+            r=self.post('/api/directories',dict(path=str(self.media),role='both'),csrf)
+            self.assertEqual(r,{'ok':True})
+        # 恢复 roles 文件，避免影响后续用例：
+        tmp=server.VAR/'directories.tmp';tmp.write_text(json.dumps({str(self.out):'both'}))
+        tmp.replace(server.VAR/'directories.json')
     def test_preflight_rejects_application_filesystem_acl(self):
         info=dict(width=1920,height=1080,fps=24,duration=2,unsupported_reasons=[])
         route='/api/preflight?'+urllib.parse.urlencode(dict(path=str(self.media/'a.mp4'),mode='both',fps=60,scale=2))
