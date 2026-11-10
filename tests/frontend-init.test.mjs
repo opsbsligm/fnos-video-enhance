@@ -256,6 +256,10 @@ test('去噪修复档：产物名带 AI修复、行显隐正确',async()=>{
  assert.equal(ctx.deriveNameFn('/media/sample.mp4','denoise',2,60),'sample[AI修复].mkv');
  assert.equal(nodes.get('fps-row').classList.contains('hidden'),true);
  assert.equal(nodes.get('scale-row').classList.contains('hidden'),true);
+ ctx.selectModeFn('denoise_block');
+ assert.equal(ctx.deriveNameFn('/media/sample.mp4','denoise_block',2,60),'sample[AI去块].mkv');
+ assert.equal(nodes.get('fps-row').classList.contains('hidden'),true);
+ assert.equal(nodes.get('scale-row').classList.contains('hidden'),true);
  ctx.selectModeFn('both');
  assert.equal(ctx.deriveNameFn('/media/sample.mp4','both',2,60),'sample[AI超分×2·60fps].mkv');
  assert.equal(nodes.get('fps-row').classList.contains('hidden'),false);

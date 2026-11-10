@@ -3,7 +3,7 @@ from fractions import Fraction
 import math
 import re
 
-MODES=('interpolate','upscale','both','denoise')
+MODES=('interpolate','upscale','both','denoise','denoise_block')
 
 def derive_output_name(source_path,mode,scale,target_fps):
     """成果名 = 原文件名[AI超分×N·60fps].mkv；随源存放，不再制造任务ID目录。"""
@@ -13,6 +13,7 @@ def derive_output_name(source_path,mode,scale,target_fps):
     tags=[]
     if mode in('upscale','both'):tags.append(f'AI超分×{scale}')
     elif mode=='denoise':tags.append('AI修复')
+    elif mode=='denoise_block':tags.append('AI去块')
     if mode in('interpolate','both'):tags.append(f'{target_fps}fps')
     return (stem[:150]+'…' if len(stem)>150 else stem)+f'[{"·".join(tags)}].mkv'
 
@@ -44,6 +45,9 @@ def plan(info,mode,target_fps=60,scale=2):
         ow,oh,ofps=w,h,target_fps
     elif mode=='denoise':
         # 原生分辨率修复：4×上采样推理再缩回源尺寸，清块状/噪点/JPEG 伪影，不改分辨率与帧率。
+        ow,oh,ofps=w,h,fps
+    elif mode=='denoise_block':
+        # 去马赛克（去压缩块）：DCT 域去块滤波，专治 8×8 压缩块边缘锯齿；保细节，不改分辨率与帧率。
         ow,oh,ofps=w,h,fps
     else:
         factor=min(scale,3840/w,2160/h);ow,oh=max(2,int(w*factor)//2*2),max(2,int(h*factor)//2*2);ofps=target_fps if mode=='both' else fps

@@ -55,7 +55,7 @@ function modeLabel(spec){return spec.mode==='both'?'超分×'+spec.scale+' + 插
 function modeTitle(mode){return {interpolate:'视频插帧',upscale:'视频超分',both:'超分＋插帧',denoise:'去噪修复'}[mode];}
 function modeLine(mode){return {interpolate:'原片只读；提升流畅度，分辨率与画质不变。成品直接写入原片目录。',upscale:'原片只读；放大清晰度，帧率不变。成品直接写入原片目录。',both:'原片只读；先插帧再超分，单遍流水线。成品直接写入原片目录。',denoise:'原片只读；清除块状伪影与噪点，分辨率与帧率不变。成品直接写入原片目录。'}[mode];}
 function applyModeRows(){const needFps=operation==='interpolate'||operation==='both',needScale=operation==='upscale'||operation==='both';$('fps-row').classList.toggle('hidden',!needFps);$('scale-row').classList.toggle('hidden',!needScale);}
-function deriveName(path,mode,scale,fps){let stem=String(path).split('/').pop().replace(/\.[^.]+$/,'')||'输出';stem=stem.replace(/\x00/g,'').replace(/^[.\s]+|[.\s]+$/,'')||'输出';if(stem.length>150)stem=stem.slice(0,150)+'…';const tags=[];if(mode==='upscale'||mode==='both')tags.push('AI超分×'+scale);else if(mode==='denoise')tags.push('AI修复');if(mode==='interpolate'||mode==='both')tags.push(fps+'fps');return stem+'['+tags.join('·')+'].mkv';}
+function deriveName(path,mode,scale,fps){let stem=String(path).split('/').pop().replace(/\.[^.]+$/,'')||'输出';stem=stem.replace(/\x00/g,'').replace(/^[.\s]+|[.\s]+$/,'')||'输出';if(stem.length>150)stem=stem.slice(0,150)+'…';const tags=[];if(mode==='upscale'||mode==='both')tags.push('AI超分×'+scale);else if(mode==='denoise')tags.push('AI修复');else if(mode==='denoise_block')tags.push('AI去块');if(mode==='interpolate'||mode==='both')tags.push(fps+'fps');return stem+'['+tags.join('·')+'].mkv';}
 function renderExecutionHint(){
  const hint=$('execution-hint');if(!hint)return;
  const exe=$('execution').value,hasGpu=Boolean(status?.gpu?.gpus?.length),needsGpu=exe!=='cpu';

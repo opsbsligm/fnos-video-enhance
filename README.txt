@@ -1,4 +1,4 @@
-视频增强 0.3.9：HOMELAB内部预览版（安装版=0.3.9，2026-11-10 已部署并POC验收；历史：0.1.0首发→0.3.1版本收口→0.3.2完成语义/文案→0.3.3 GPU全功率→0.3.4产物简化→0.3.5/0.3.6调试修复→0.3.7 fd超限→0.3.8安全闭环→0.3.9去噪修复+UI卡片化）
+视频增强 0.3.10：HOMELAB内部预览版（安装版=0.3.10 已热部署生产并POC验收；历史：0.1.0首发→0.3.1版本收口→0.3.2完成语义/文案→0.3.3 GPU全功率→0.3.4产物简化→0.3.5/0.3.6调试修复→0.3.7 fd超限→0.3.8安全闭环→0.3.9去噪修复+UI卡片化→0.3.10去马赛克/去压缩块）
 
 架构：飞牛FPK + package独立账户 + 统一网关Unix socket + 系统目录授权/用户ACL + SQLite任务库 + 独立模型进程。
 前端参考飞牛影视/音乐的使用模式：媒体资源、任务中心、目录授权、运行设置。不是它们的私有代码。
@@ -98,3 +98,23 @@ request_id 发现：服务端校验 64 位小写 hex（uuid4），与前端 auth
 验证：python3.11 96 项全绿（含新增回归 test_configured_directories_survive_empty_system_api）；NAS 真机热修（server.py 备份 server.py.bak-authfix-20261110）重启后 /api/directories 恢复返回 4 个已配置目录（typo 目录 /vol2/1000/Dowanloads 不存在被 open_beneath 自动过滤）；ec3dfc13 续跑受理→running，worker 起、帧数推进（220944→221088，68.0%），GPU 79℃ 低于 95℃ 闸门。
 回滚：cp server.py.bak-authfix-20261110 server.py 并重启应用（改动仅授权候选集来源，无数据结构变化）。
 已知坏件处置：f8cdb9bc（小月喵-01 双增强，flip 撕裂修复前产物）任务已从库清理；源片小月喵-01.mp4 已不在 NO_SAY（用户侧仅留 -02 与坏件成品 611MB），成品留原位待用户决定是否重跑或删除。
+
+去马赛克（去压缩块）模式（2026-11-10，0.3.10，已热部署生产并POC验收）：
+新增第五种增强方式「去马赛克」denoise_block：ffmpeg `deblock` DCT 域去块滤波挂在解码与编码之间，
+专治 H.264/H.265 8×8 压缩块边缘锯齿，保细节、不改分辨率与帧率；纯 CPU 不占 GPU（区别于 denoise 的 RealESRGAN 神经修复）。
+成品命名 原片名[AI去块].mkv；4K 实测 ~11fps 纯 CPU（12 核），1080p 更快。
+与去噪的语义区分（用户澄清后定）：denoise=神经去噪/去伪影（GPU，RealESRGAN），denoise_block=去压缩块边缘（CPU，DCT 去块）；
+二者都能"减块"，但去马赛克专治块边缘且保细节、不动整体纹理，故单列一档。
+后端：media_plan.MODES 加 denoise_block，plan() 保源分辨率/帧率，输出名标签 [AI去块]；
+worker 编码侧条件挂 -vf deblock，denoise_block 在 device=cuda 下 gpu 置 False（按源尺寸、不 proxy、不加载模型、不占显存）；
+server 对 denoise_block 免 GPU 共享验收与 require_gpu；capabilities 补「去马赛克（去压缩块）」。
+前端：增强方式卡片加「去马赛克 · 去压缩块·保细节」；修正 modeLabel 此前漏 denoise 会误显示"超分→2倍"的问题。
+POC验收（真机 P100/12核，纯CPU deblock，与 ec3dfc13 GPU 大任务解耦验证并发）：
+提交 4bfe877e denoise_block 10s 样片（源 IPX-811-U 2560×1440@30）→ 样片-IPX-811-U-美颜版[AI去块].mkv（9.5MB），
+completed「原尺寸样片通过检查 2560×1440@30.0001fps 10.01s」（分辨率/帧率不变）；抽帧同一区域(800,400)放大目检：去块后头发/墙面块边更平滑、细节未糊。
+测试：python3.11 97 项全绿（新增 test_denoise_block）、node --test 36 项全绿（新增 denoise_block 命名与行显隐）；esbuild app.js 63.4kb。
+版本收口：version.py/manifest/package.json/index.html 同步 0.3.10；PIPELINE_TAG 保持 0.3.0-cfr-segments（检查点兼容），PIPELINE_VERSIONS 追加 0.3.10。
+部署：0.3.10 热部署生产（顶层 worker.py/server.py/media_plan.py/version.py + www 全量同步，顶层=运行时权威，src/ 一并对齐）；
+升级前备份 /vol2/@appdata/video-enhance-prehotfix-20261110/；appcenter-cli stop/start 后 version=0.3.10、capabilities 含去马赛克。
+遗留：本次为热部署（非 fnpack 正式 0.3.10 fpk）；ec3dfc13（异星迷航 4K 双增强，~70%）重启后续跑中，尚未跑完抽帧验收；
+明暗主题/窄屏真机高清截图验收仍缺；正式 0.3.10 fpk 打包可随下次统一收口。
