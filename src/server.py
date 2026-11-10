@@ -83,7 +83,10 @@ def roles():
 def authorized_roots(uid, write=False):
     system=[str(Path(p)) for p in platform_api.shared_roots() if content_allowed(p)]
     configured=roles()
-    selected=[p for p in system if configured.get(p,'input') in (('output','both') if write else ('input','both'))]
+    # 飞牛系统 API 升级后可能清空；应用内已配置的目录首次授权时已验证，可独立作为候选。
+    role_ok=('output','both') if write else ('input','both')
+    candidates=list(dict.fromkeys(system + [p for p in configured if content_allowed(p)]))
+    selected=[p for p in candidates if configured.get(p,'input') in role_ok]
     # 自带自测源位于应用私有目录：读写不经飞牛授权；用户成果一律落回原片目录。
     demo=str(VAR/'demo')
     try: Path(demo).mkdir(parents=True,exist_ok=True)
@@ -283,7 +286,8 @@ class Handler(BaseHTTPRequestHandler):
                            capabilities=['手动选片','独立插帧','独立超分','超分+插帧单任务双增强','成品直接产出在原片旁（随源命名，不建目录）','CPU缩小功能预览','任务取消','暂停与校验续跑','历史清理','原片只读'],
                            limits=['SDR/CFR','HDR/DV不支持','共享生产验收未通过时保持排队','兼容范围仅当前fnOS x86与P100运行包']))
             if route=='/api/directories':
-                r=platform_api.shared_roots();return self.send(200,dict(shared=[p for p in r if content_allowed(p)],roles=roles(),
+                _all=list(dict.fromkeys(platform_api.shared_roots()+list(roles().keys())))
+                return self.send(200,dict(shared=[p for p in _all if content_allowed(p)],roles=roles(),
                                               inputs=authorized_roots(uid),outputs=authorized_roots(uid,True)))
             if route=='/api/browse':
                 target=q.get('path',[''])[0];root=matching_root(target,authorized_roots(uid))
@@ -371,7 +375,10 @@ class Handler(BaseHTTPRequestHandler):
             if route==PREFIX+'/api/directories':
                 path=data.get('path','');role=data.get('role')
                 if role not in ('input','output','both','disabled'):raise ValueError('目录用途不允许')
-                if path not in platform_api.shared_roots() or not content_allowed(path):
+                # 已配置目录（首次授权时已验证）允许重新设置用途；新路径须飞牛系统 API 确认。
+                if path not in platform_api.shared_roots() and path not in roles():
+                    raise PermissionError('请先使用飞牛目录授权')
+                if not content_allowed(path):
                     raise PermissionError('请先使用飞牛目录授权')
                 platform_api.check_acl(uid,path,role in ('output','both'))
                 fd=open_beneath(path,path,True);os.close(fd)
