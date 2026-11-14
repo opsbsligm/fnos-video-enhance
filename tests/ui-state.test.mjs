@@ -13,6 +13,8 @@ test('零帧和已完成进度均明确显示，非法工作帧不能越界',()=
  assert.equal(taskProgressText('running',{}),'');
 });
 test('部分成功后重试不重复成功任务',async()=>{const selected=new Set(['a','b','c']),calls=[];await assert.rejects(submitPending(selected,async p=>{calls.push(p);if(p==='b')throw Error('失败');}),/已成功提交 1 个/);assert.deepEqual([...selected],['b','c']);assert.equal(await submitPending(selected,async p=>calls.push(p)),2);assert.deepEqual(calls,['a','b','b','c']);});
+test('可跳过错误不中断批次，其余照常提交',async()=>{const selected=new Set(['a','b','c']),skipped=[],calls=[];const skip=Error('片源不适用');skip.__kind='skip';const count=await submitPending(selected,async p=>{if(p==='b'){const e=Error('已达4K上限');e.skipKind='preflight';throw e;}calls.push(p);},()=>{},(e)=>e.skipKind==='preflight');assert.equal(count,2);assert.deepEqual(calls,['a','c']);assert.deepEqual([...selected],[]);});
+test('无跳过回调时错误仍终止批次',async()=>{const selected=new Set(['a','b']);await assert.rejects(submitPending(selected,async p=>{if(p==='a')throw Error('网络失败');}),/已成功提交 0 个/);assert.deepEqual([...selected],['a','b']);});
 test('全部成功清空选择',async()=>{const selected=new Set(['a']);assert.equal(await submitPending(selected,async()=>{}),1);assert.equal(selected.size,0);});
 
 test('探测队列最多两个并发，单个失败不阻塞余下视频',async()=>{
