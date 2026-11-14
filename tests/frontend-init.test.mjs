@@ -4,6 +4,12 @@ import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 import {createLimiter,estimateRemaining,taskProgressText} from '../src/ui-state.mjs';
 
+const indexHtml=readFileSync(new URL('../src/www/index.html',import.meta.url),'utf8');
+test('深度去噪(BM3D)模式卡片存在',()=>{
+ assert.match(indexHtml,/data-mode="denoise_bm3d"/);
+ assert.match(indexHtml,/<b>深度去噪<\/b>/);
+});
+
 test('操作说明使用可读文字色，飞牛装饰令牌保持不变',()=>{
  const css=readFileSync(new URL('../src/www/style.css',import.meta.url),'utf8');
  assert.match(css,/\.empty small\{color:var\(--text-1\)\}/);
@@ -258,6 +264,10 @@ test('去噪修复档：产物名带 AI修复、行显隐正确',async()=>{
  assert.equal(nodes.get('scale-row').classList.contains('hidden'),true);
  ctx.selectModeFn('denoise_block');
  assert.equal(ctx.deriveNameFn('/media/sample.mp4','denoise_block',2,60),'sample[AI去块].mkv');
+ assert.equal(nodes.get('fps-row').classList.contains('hidden'),true);
+ assert.equal(nodes.get('scale-row').classList.contains('hidden'),true);
+ ctx.selectModeFn('denoise_bm3d');
+ assert.equal(ctx.deriveNameFn('/media/sample.mp4','denoise_bm3d',2,60),'sample[AI深度去噪].mkv');
  assert.equal(nodes.get('fps-row').classList.contains('hidden'),true);
  assert.equal(nodes.get('scale-row').classList.contains('hidden'),true);
  ctx.selectModeFn('both');

@@ -3,7 +3,7 @@ from fractions import Fraction
 import math
 import re
 
-MODES=('interpolate','upscale','both','denoise','denoise_block')
+MODES=('interpolate','upscale','both','denoise','denoise_block','denoise_bm3d')
 
 def derive_output_name(source_path,mode,scale,target_fps):
     """成果名 = 原文件名[AI超分×N·60fps].mkv；随源存放，不再制造任务ID目录。"""
@@ -14,6 +14,7 @@ def derive_output_name(source_path,mode,scale,target_fps):
     if mode in('upscale','both'):tags.append(f'AI超分×{scale}')
     elif mode=='denoise':tags.append('AI修复')
     elif mode=='denoise_block':tags.append('AI去块')
+    elif mode=='denoise_bm3d':tags.append('AI深度去噪')
     if mode in('interpolate','both'):tags.append(f'{target_fps}fps')
     return (stem[:150]+'…' if len(stem)>150 else stem)+f'[{"·".join(tags)}].mkv'
 
@@ -48,6 +49,9 @@ def plan(info,mode,target_fps=60,scale=2):
         ow,oh,ofps=w,h,fps
     elif mode=='denoise_block':
         # 去马赛克（去压缩块）：DCT 域去块滤波，专治 8×8 压缩块边缘锯齿；保细节，不改分辨率与帧率。
+        ow,oh,ofps=w,h,fps
+    elif mode=='denoise_bm3d':
+        # 深度去噪/去块：BM3D 块匹配 3D 变换（去噪领域金标准），对重度压缩块+噪点混合更有效，代价是纯 CPU 慢数倍；不改分辨率与帧率。
         ow,oh,ofps=w,h,fps
     else:
         factor=min(scale,3840/w,2160/h);ow,oh=max(2,int(w*factor)//2*2),max(2,int(h*factor)//2*2);ofps=target_fps if mode=='both' else fps

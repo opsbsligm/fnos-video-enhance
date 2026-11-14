@@ -118,3 +118,23 @@ completed「原尺寸样片通过检查 2560×1440@30.0001fps 10.01s」（分辨
 升级前备份 /vol2/@appdata/video-enhance-prehotfix-20261110/；appcenter-cli stop/start 后 version=0.3.10、capabilities 含去马赛克。
 遗留：本次为热部署（非 fnpack 正式 0.3.10 fpk）；ec3dfc13（异星迷航 4K 双增强，~70%）重启后续跑中，尚未跑完抽帧验收；
 明暗主题/窄屏真机高清截图验收仍缺；正式 0.3.10 fpk 打包可随下次统一收口。
+
+深度去噪模式 denoise_bm3d（2026-11-10，0.3.11，已热部署生产并POC验收）：
+新增第六种增强方式「深度去噪」denoise_bm3d：ffmpeg `bm3d` 块匹配三维去噪，纯 CPU 保分辨率/帧率，
+与 denoise_block（deblock 快速档）形成去马赛克双档：deblock 快（4K ~11fps）治块边缘，bm3d 慢（1440p ~0.66fps）深度去噪保结构。
+成品命名 原片名[AI深度去噪].mkv。
+后端：media_plan.MODES 加 denoise_bm3d（标签 AI深度去噪）；worker pure_cpu 覆盖两模式、-vf bm3d 分支、stage「深度去噪」；
+server cuda 准入排除 bm3d（纯 CPU 不占显存）、capabilities 补「深度去噪/去块（BM3D）」。
+前端：增强方式卡片加「深度去噪 · BM3D·保结构」；modeTitle/modeLine/deriveName/modeLabel 补全；版本 0.3.11。
+POC验收（真机 12核纯CPU）：d2bb2592 denoise_bm3d 10s 样片（源 IPX-811-U 2560×1440@30）→ 样片-IPX-811-U-美颜版[AI深度去噪].mkv（9.68MB），
+completed「原尺寸样片通过检查 2560×1440@30.0001fps 10.01s」；t=2/5/8s 抽帧与源对比目检：构图/细节一致无撕裂，噪点/压缩痕迹更平滑。
+实测 1440p 300帧 296s（~1.0fps，12核全功率），比 1080p 5s 125s 的预测试略快。
+测试：python3.11 98 项全绿（新增 test_denoise_bm3d）、node --test 37 项全绿（新增 indexHtml/selectMode/deriveName 断言）；esbuild app.js 64.6kb。
+版本收口：version.py/manifest/package.json/index.html 同步 0.3.11；PIPELINE_TAG 保持 0.3.0-cfr-segments（检查点兼容），PIPELINE_VERSIONS 追加 0.3.11。
+部署：0.3.11 热部署生产（顶层+src 四 py 全量同步 + www 全量同步，逐文件 md5 回读一致）；升级前备份 /vol2/@appdata/video-enhance-prehotfix-bm3d-20261110/；
+appcenter-cli stop/start 后 API 回读 version=0.3.11、capabilities 含 BM3D、gpu.available=True。
+CI收口：分支 feat/denoise-bm3d-0.3.11 → MR !5（codex 提交 4f138d5，11 文件 +46/-25，与 main 内容差异即 0.3.11 全部改动）；
+流水线 1708 等待共享 runner（runner 8 被 moonlight project 6 mutation-battery 长跑占用，单并发），结果与 liguangming 审查合并记录待补。
+回滚：cp /vol2/@appdata/video-enhance-prehotfix-bm3d-20261110 各文件回位并重启应用（无数据结构变化）。
+遗留：本次为热部署（正式 0.3.11 fnpack fpk 未打，可随下次统一收口）；MR !5 审查/合并待 runner 空档跑完 1708；
+ec3dfc13（异星迷航 4K 双增强，暂停于 ~71.6%）BM3D 样片验收后已 resume 续跑；明暗主题/窄屏真机高清截图验收仍缺。

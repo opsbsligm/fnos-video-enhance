@@ -106,7 +106,8 @@ def main():
     try:
         _sf,_hf=resource.getrlimit(resource.RLIMIT_NOFILE);resource.setrlimit(resource.RLIMIT_NOFILE,(min(_hf,max(_sf,65536)),_hf))
     except Exception:pass
-    src_fd,out_fd,work_fd=spec['source_fd'],spec['output_fd'],spec['work_fd'];gpu=spec['device']=='cuda' and spec['mode']!='denoise_block'  # 去马赛克为纯CPU去块滤波，不占GPU；denoise_block 在 cuda 设备下仍按源尺寸处理
+    pure_cpu=spec['mode'] in ('denoise_block','denoise_bm3d')  # 去马赛克/深度去噪为纯CPU滤镜，不占GPU；cuda 设备下仍按源尺寸处理
+    src_fd,out_fd,work_fd=spec['source_fd'],spec['output_fd'],spec['work_fd'];gpu=spec['device']=='cuda' and not pure_cpu
     if gpu:guard.require_gpu(spec['gpu_uuid'])
     os.environ['CUDA_VISIBLE_DEVICES']=spec['gpu_uuid'] if gpu else ''
     if gpu:os.environ.setdefault('PYTORCH_CUDA_ALLOC_CONF','expandable_segments:True')
@@ -193,12 +194,12 @@ def main():
         offset=round(float(fps)*spec['start_seconds']) if spec['preview'] else 0
         count=min(count-offset,max(1,round(float(fps)*spec['preview_seconds']))) if spec['preview'] else count
         if count<=0:raise RuntimeError('样片起点无视频帧')
-        do_sr=spec['mode'] in ('upscale','both','denoise');do_fi=spec['mode'] in ('interpolate','both');do_deblock=spec['mode']=='denoise_block'
+        do_sr=spec['mode'] in ('upscale','both','denoise');do_fi=spec['mode'] in ('interpolate','both');do_deblock=spec['mode']=='denoise_block';do_bm3d=spec['mode']=='denoise_bm3d'
         target=Fraction(spec['target_fps']) if do_fi else fps
         if do_fi and target<=fps:raise RuntimeError('插帧目标必须高于原帧率')
         total=round(Fraction(count,1)/fps*target)
         duration=float(Fraction(count,1)/fps)
-        width,height=video['width'],video['height'];proxy=not gpu and spec['preview'] and spec['mode']!='denoise_block'
+        width,height=video['width'],video['height'];proxy=not gpu and spec['preview'] and not pure_cpu
         if proxy and width>320:height=max(2,round(height*320/width/2)*2);width=320
         out_width,out_height=width,height
         if do_sr and spec['mode']!='denoise':
@@ -233,7 +234,7 @@ def main():
             from srvgg_arch import SRVGGNetCompact
             fsrn=SRVGGNetCompact(num_in_ch=3,num_out_ch=3,num_feat=64,num_conv=32,upscale=4,act_type='prelu')
             d=torch.load(engine/'realesr-general-x4v3.pth',map_location='cpu',weights_only=True);fsrn.load_state_dict(d.get('params_ema',d.get('params')))
-        if not do_fi and not do_sr and not do_deblock:raise RuntimeError('未知操作')
+        if not do_fi and not do_sr and not do_deblock and not do_bm3d:raise RuntimeError('未知操作')
         check();net=[m.to(device).eval() for m in (finet,fsrn) if m]
         half_gpu=gpu and bool(p.get('full_power')) and torch.cuda.is_available() and torch.cuda.get_device_capability()>=(7,0)
         if half_gpu:net=[m.half() for m in net]
@@ -302,13 +303,13 @@ def main():
             reader=Frames(spec,src_fd,offset+index,fps,width,height,proxy,video['index']);a=reader.read(np)
             if index+1<count:b=reader.read(np)
         chunk_frames=max(1,min(120,int(spec.get('chunk_frames',12))))
-        stage='双增强（插帧+超分）' if do_sr and do_fi else ('去噪修复' if spec['mode']=='denoise' else ('去马赛克' if do_deblock else ('超分' if do_sr else '插帧')))
+        stage='双增强（插帧+超分）' if do_sr and do_fi else ('去噪修复' if spec['mode']=='denoise' else ('去马赛克' if do_deblock else ('深度去噪' if do_bm3d else ('超分' if do_sr else '插帧'))))
         with torch.inference_mode():
             while checkpoint['frames_done']<total:
                 check();part_start=checkpoint['frames_done'];part_end=min(total,part_start+chunk_frames)
                 name,outfd=allocate('.mkv');errname,errfd=allocate('.log')
                 cmd=[spec['ffmpeg'],'-nostdin','-v','error','-y','-f','rawvideo','-pix_fmt','bgr24','-s',f'{out_width}x{out_height}',
-                     '-r',str(target),'-i','pipe:0']+(['-vf','deblock'] if do_deblock else [])+['-an','-c:v','libx264','-threads',_threads(),'-preset','fast','-crf','18','-pix_fmt','yuv420p',
+                     '-r',str(target),'-i','pipe:0']+(['-vf','deblock'] if do_deblock else (['-vf','bm3d'] if do_bm3d else []))+['-an','-c:v','libx264','-threads',_threads(),'-preset','fast','-crf','18','-pix_fmt','yuv420p',
                      '-f','matroska',f'/proc/self/fd/{outfd}']
                 encoder=subprocess.Popen(cmd,stdin=subprocess.PIPE,stderr=errfd,pass_fds=tuple(fds))
                 ew=AsyncWriter(encoder.stdin)
