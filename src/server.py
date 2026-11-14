@@ -171,7 +171,7 @@ def scheduler():
                 # 工作文件（分片/检查点）放应用私有目录，成果目录只落最终成品一个文件。
                 workdir=VAR/'work'/jid;workdir.mkdir(parents=True,exist_ok=True)
                 wfd=os.open(str(workdir),os.O_DIRECTORY|os.O_RDONLY|os.O_NOFOLLOW);fds.append(wfd)
-                if spec['device']=='cuda' and spec['mode']!='denoise_block':  # 去马赛克为纯CPU去块，不占GPU，免共享验收
+                if spec['device']=='cuda' and spec['mode'] not in ('denoise_block','denoise_bm3d'):  # 去马赛克/深度去噪为纯CPU，不占GPU，免共享验收
                     g=next((g for g in guard.snapshot()['gpus'] if g['uuid']==spec['gpu_uuid']),None)
                     policy=guard.policy()
                     if spec['gpu_uuid'] not in policy.get('validated_shared_gpus',[])+policy.get('validated_dedicated_gpus',[]):
@@ -206,7 +206,7 @@ def scheduler():
                         matching_root(spec['source_path'],authorized_roots(row['uid']))
                         matching_root(out,authorized_roots(row['uid'],True))
                     except Exception:reason='权限已撤销或授权监测失联';break
-                    if spec['device']=='cuda' and spec['mode']!='denoise_block':
+                    if spec['device']=='cuda' and spec['mode'] not in ('denoise_block','denoise_bm3d'):
                         try:guard.require_gpu(spec['gpu_uuid'],p.pid)
                         except Exception as e:reason=str(e);break
                 if p.poll() is None:
@@ -283,7 +283,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(200,dict(version=VERSION,user_uid=uid,csrf=self.csrf(uid),gpu=guard.snapshot(),
                            execution_policy=('全功率：占空/优先级让步已解除，仅温度与显存余量闸门生效' if guard.policy().get('full_power') else '推理优先共享；P95增幅≤5%经实际对照通过后开放'),demo_dir=str(VAR/'demo'),
                            dependency_profile='Python3.11 / torch2.5.1+cu121 / RIFE4.26 / RealESRGAN-general-x4v3',
-                           capabilities=['手动选片','独立插帧','独立超分','超分+插帧单任务双增强','去噪修复','去马赛克（去压缩块）','成品直接产出在原片旁（随源命名，不建目录）','CPU缩小功能预览','任务取消','暂停与校验续跑','历史清理','原片只读'],
+                           capabilities=['手动选片','独立插帧','独立超分','超分+插帧单任务双增强','去噪修复','去马赛克（去压缩块）','深度去噪/去块（BM3D）','成品直接产出在原片旁（随源命名，不建目录）','CPU缩小功能预览','任务取消','暂停与校验续跑','历史清理','原片只读'],
                            limits=['SDR/CFR','HDR/DV不支持','共享生产验收未通过时保持排队','兼容范围仅当前fnOS x86与P100运行包']))
             if route=='/api/directories':
                 _all=list(dict.fromkeys(platform_api.shared_roots()+list(roles().keys())))

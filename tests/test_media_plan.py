@@ -27,6 +27,11 @@ class MediaTests(unittest.TestCase):
   self.assertTrue(p['supported']);self.assertEqual((p['output_width'],p['output_height'],p['output_fps']),(1280,720,24))
   self.assertEqual(derive_output_name('/a/b/c.mp4','denoise_block',2,60),'c[AI去块].mkv')
   self.assertIn('denoise_block',MODES)
+ def test_denoise_bm3d(self):
+  p=plan(dict(width=1280,height=720,fps=24),'denoise_bm3d',60,2)
+  self.assertTrue(p['supported']);self.assertEqual((p['output_width'],p['output_height'],p['output_fps']),(1280,720,24))
+  self.assertEqual(derive_output_name('/a/b/c.mp4','denoise_bm3d',2,60),'c[AI深度去噪].mkv')
+  self.assertIn('denoise_bm3d',MODES)
  def test_invalid(self):
   with self.assertRaises(ValueError):plan(dict(width=1280,height=720,fps=24),'bad')
  def test_output_name(self):
