@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
-import {createLimiter,estimateRemaining,taskProgressText} from '../src/ui-state.mjs';
+import {createLimiter,estimateRemaining,taskProgressText,submitPending as realSubmitPending} from '../src/ui-state.mjs';
 
 const indexHtml=readFileSync(new URL('../src/www/index.html',import.meta.url),'utf8');
 test('深度去噪(BM3D)模式卡片存在',()=>{
@@ -41,6 +41,7 @@ async function start(inputs=['/media'],gpus=[]){
     document:{getElementById:id=>nodes.get(id)||null,createElement:tag=>new Element(tag),querySelectorAll:()=>[],body:new Element()},
     window:{addEventListener(){}},setInterval(fn){ctx.poll=fn;},setTimeout(){},clearTimeout(){},
     URL,
+    authState:()=>"a".repeat(64),
     fetch:async (url,options)=>{ctx.lastRequestOptions=options;calls.push(url);let data;
       if(url.endsWith('/api/status'))data={version:'test',gpu:{gpus},dependency_profile:'test'};
       else if(url.endsWith('/api/directories'))data={inputs,shared:[],roles:{}};
@@ -274,4 +275,27 @@ test('去噪修复档：产物名带 AI修复、行显隐正确',async()=>{
  assert.equal(ctx.deriveNameFn('/media/sample.mp4','both',2,60),'sample[AI超分×2·60fps].mkv');
  assert.equal(nodes.get('fps-row').classList.contains('hidden'),false);
  assert.equal(nodes.get('scale-row').classList.contains('hidden'),false);
+});
+
+test('批量提交预检拒收单片仅跳过该片，其余正常提交（0.3.12 回归：onSkipped 漏 path 形参致 path is not defined）',async()=>{
+ const {ctx,nodes}=await start(['/media'],[{uuid:'G',name:'GPU'}]);
+ ctx.window.crypto={getRandomValues(){}};
+ nodes.get('task-dialog').close=()=>{};
+ ctx.submitPending=realSubmitPending;
+ let jobs=0;
+ ctx.fetch=async(url,options)=>{
+   const u=new URL(url);
+   if(u.pathname.endsWith('/api/status'))return {ok:true,json:async()=>({version:'t',csrf:'c',gpu:{gpus:[{uuid:'G',name:'GPU'}]},dependency_profile:'t'})};
+   if(u.pathname.endsWith('/api/preflight')){
+     const path=u.searchParams.get('path');
+     return {ok:true,json:async()=>path.endsWith('bad.mp4')?{supported:false,reasons:['帧率不支持或可能为VFR；仅支持CFR']}:{supported:true,reasons:[]}};
+   }
+   if(options?.method==='POST'&&u.pathname.endsWith('/api/jobs')){jobs++;return {ok:true,json:async()=>({ok:true})};}
+   return {ok:true,json:async()=>({inputs:['/media'],shared:[],roles:{}})};
+ };
+ ctx.setSelection(['/media/bad.mp4','/media/good.mp4'],[{path:'/media/bad.mp4'},{path:'/media/good.mp4'}]);
+ await nodes.get('task-form').onsubmit({preventDefault(){}});
+ assert.equal(jobs,1);
+ assert.match(nodes.get('toast').textContent,/已提交 1 个任务/);
+ assert.match(nodes.get('toast').textContent,/1 个未提交：bad\.mp4（帧率不支持/);
 });

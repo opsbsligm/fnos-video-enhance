@@ -1,11 +1,19 @@
 // 已提交的文件立即移出待提交集合，失败重试不会重复创建成功任务。
-export async function submitPending(selected, submitOne, onCommitted=()=>{}) {
+// onSkipped 返回 true 表示该错误可跳过（如 preflight 判定片源不适用）：记录后继续处理其余文件；
+// 其余错误（网络/创建失败）仍终止本轮，已成功任务保留、剩余可重试。
+export async function submitPending(selected, submitOne, onCommitted=()=>{}, onSkipped=null) {
   let count=0;
   for (const path of [...selected]) {
-    try {await submitOne(path);} catch (error) {
+    try {
+      await submitOne(path);
+      selected.delete(path);count++;onCommitted(path);
+    } catch (error) {
+      if (onSkipped && onSkipped(error, path)) {
+        selected.delete(path);
+        continue;
+      }
       throw new Error(`已成功提交 ${count} 个；剩余 ${selected.size} 个未提交。${error.message||'请求失败'}`);
     }
-    selected.delete(path);count++;onCommitted(path);
   }
   return count;
 }
