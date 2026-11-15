@@ -157,3 +157,14 @@ liguangming 留审查记录并批准，squash 合并（squash=c6b49c7，merged_b
 遗留：本次为热部署（正式 0.3.12 fnpack fpk 未打，与 0.3.11 一并于下次统一打包）；
 用户真实路径验收（多选混入不支持片源不再整批拒收）以前端回归测试+生产任务观察为据，尚待用户确认；
 任务 21b7d05f 4K 双增强整片在本记录落笔时仍在跑，终态与抽帧目检待核；明暗主题/窄屏真机高清截图验收仍缺。
+
+0.3.12 正式包与收尾（2026-11-15）：
+①正式 0.3.12 fnpack fpk 已打出（verify_package.py 全过：11 核心文件与 main 逐文件一致、development_residue=false，manifest version=0.3.12）；
+releases 区收口：video-enhance-0.3.12.fpk 入库（sha256=3eab2b190592450068782bbcdd7686cef40e415092d1c3c8dd1a99259a7072b7，含 .sha256）；
+回滚包保留 video-enhance-0.3.9.fpk（当前安装基座，sha 已核）；已验收淘汰 0.3.4/0.3.5/0.3.6（含 verification.json），releases 18G→8.6G；
+构建区重复副本 video-enhance-fixed.fpk（与 releases/0.3.6 逐字节相同）与构建区 fpk 原件（releases 入库后）已删。
+②版本口径说明：安装目录 manifest=0.3.0、appcenter 元数据显示 0.3.9（2026-11-10 安装的正式包基座）；
+0.3.10/0.3.11/0.3.12 为热部署到运行目录，运行版本以 /api/status version=0.3.12 与页面显示为准；
+下次正式升级走 stop→uninstall→install-fpk releases/video-enhance-0.3.12.fpk 即全量对齐。
+③生产终态待核：任务 21b7d05f（The Astronaut 4K 双增强，312427 帧）收尾核对时 10.9%；17:12 fnOS 应用中心例行重启（影视/音乐等批量 stop→auto_start）连带重启本应用，worker 第 3 次 YIELD 后调度器误标 failed（Errno 2，检查点完好）；17:20 经 /api/resume（uid1000，与 UI 同接口）恢复，running 帧数持续上涨（33936→33984 复核通过），剩余约 2 天，终态与抽帧目检待完成后核；
+多选混入不支持片源的用户真实路径验收待用户下一次批量提交确认；明暗主题/窄屏真机高清截图验收仍缺（机制已验证：applyTheme+body[theme-mode] 令牌 + 6 组响应式断言）。
