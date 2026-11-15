@@ -1,4 +1,4 @@
-视频增强 0.3.10：HOMELAB内部预览版（安装版=0.3.10 已热部署生产并POC验收；历史：0.1.0首发→0.3.1版本收口→0.3.2完成语义/文案→0.3.3 GPU全功率→0.3.4产物简化→0.3.5/0.3.6调试修复→0.3.7 fd超限→0.3.8安全闭环→0.3.9去噪修复+UI卡片化→0.3.10去马赛克/去压缩块）
+视频增强 0.3.12：HOMELAB内部预览版（安装版=0.3.12 已热部署生产并合并主干；历史：0.1.0首发→0.3.1版本收口→0.3.2完成语义/文案→0.3.3 GPU全功率→0.3.4产物简化→0.3.5/0.3.6调试修复→0.3.7 fd超限→0.3.8安全闭环→0.3.9去噪修复+UI卡片化→0.3.10去马赛克/去压缩块→0.3.11深度去噪BM3D→0.3.12批量预检容错）
 
 架构：飞牛FPK + package独立账户 + 统一网关Unix socket + 系统目录授权/用户ACL + SQLite任务库 + 独立模型进程。
 前端参考飞牛影视/音乐的使用模式：媒体资源、任务中心、目录授权、运行设置。不是它们的私有代码。
@@ -133,8 +133,27 @@ completed「原尺寸样片通过检查 2560×1440@30.0001fps 10.01s」；t=2/5/
 版本收口：version.py/manifest/package.json/index.html 同步 0.3.11；PIPELINE_TAG 保持 0.3.0-cfr-segments（检查点兼容），PIPELINE_VERSIONS 追加 0.3.11。
 部署：0.3.11 热部署生产（顶层+src 四 py 全量同步 + www 全量同步，逐文件 md5 回读一致）；升级前备份 /vol2/@appdata/video-enhance-prehotfix-bm3d-20261110/；
 appcenter-cli stop/start 后 API 回读 version=0.3.11、capabilities 含 BM3D、gpu.available=True。
-CI收口：分支 feat/denoise-bm3d-0.3.11 → MR !5（codex 提交 4f138d5，11 文件 +46/-25，与 main 内容差异即 0.3.11 全部改动）；
-流水线 1708 等待共享 runner（runner 8 被 moonlight project 6 mutation-battery 长跑占用，单并发），结果与 liguangming 审查合并记录待补。
+CI收口：分支 feat/denoise-bm3d-0.3.11 的 MR !5 被取代关闭（其流水线 1708 canceled，结果不作数）；
+改由 feat/denoise-bm3d-0.3.11-v2 提交 MR !6（squash=e4fb9b8），流水线 1989/1991 success，liguangming 合并（合并提交 8e46794）。
 回滚：cp /vol2/@appdata/video-enhance-prehotfix-bm3d-20261110 各文件回位并重启应用（无数据结构变化）。
-遗留：本次为热部署（正式 0.3.11 fnpack fpk 未打，可随下次统一收口）；MR !5 审查/合并待 runner 空档跑完 1708；
+遗留：本次为热部署（正式 0.3.11 fnpack fpk 未打，可随下次统一收口）；
 ec3dfc13（异星迷航 4K 双增强，暂停于 ~71.6%）BM3D 样片验收后已 resume 续跑；明暗主题/窄屏真机高清截图验收仍缺。
+
+批量预检容错修复（2026-11-14，0.3.12，已热部署生产并合并主干）：
+用户报「不能添加资源进行双增强」：批量勾选片源提交双增强时，任一片源被 preflight 判不支持（如已达 4K 上限/已是 60fps）即整批拒收、零任务创建，toast 只给一条笼统错误；
+生产日志同窗 13 次 preflight、0 次 jobs/create，与「整批被拦」吻合；后端 browse/preflight/授权/GPU 实测均正常，根因在前端提交链。
+根因（已验证，两层缺陷叠加）：
+1. submitPending 原逻辑为「任一文件失败即抛错终止整批」，不支持片源直接挡住其余片源；
+2. 首版修复引入 PreflightSkip 跳过机制，但 onSkipped 回调未声明 path 形参却引用裸标识符 path——非严格模式下解析到 window.path 全局属性（默认空串 ''），
+   '' split('/').pop() 得 ''，且回调体只有 if 无 return，返回 undefined（假值）→ submitPending 仍判「不可跳过」重抛 → 整批依旧失败。
+修复：src/ui-state.mjs submitPending 增 onSkipped(error,path)（返回 true 记跳过并继续，其余错误仍终止本轮、已成功保留、剩余可重试）；
+src/frontend.js submit() 回调补 path 形参、对 PreflightSkip 显式 return true / 其余 return false，toast 拆分「已提交 N 个 · N 个未提交（原因）」。
+src/frontend.js:16 的 fetch 未移动，SAST SSRF 豁免指纹(:16) 未漂移。
+验证：前端 40/40（含新增回归测试「批量提交预检拒收单片仅跳过该片，其余正常提交」）；NAS py3.11 98/98。
+热部署生产（app.js md5 ff4923d3，升级前备份 /vol2/@appdata/video-enhance-prehotfix-pathfix-20261115/），运行中任务 21b7d05f（双增强，312427 帧）未受扰、帧数持续上涨。
+CI收口：MR !7（codex 提交 2b18f08/b9cfe99/00c5fdf）；流水线 2003（merge-ref aa460ce3）十 job 全绿
+（版本/语法/构建一致性/前端/Python 单测/SAST/依赖漏洞/secret/安全裁决/打包自检）；初版流水线因 WAF 8445 断连基础设施失败，恢复后 retry 通过；
+liguangming 留审查记录并批准，squash 合并（squash=c6b49c7，merged_by=liguangming，合并提交 02a8df8）。
+遗留：本次为热部署（正式 0.3.12 fnpack fpk 未打，与 0.3.11 一并于下次统一打包）；
+用户真实路径验收（多选混入不支持片源不再整批拒收）以前端回归测试+生产任务观察为据，尚待用户确认；
+任务 21b7d05f 4K 双增强整片在本记录落笔时仍在跑，终态与抽帧目检待核；明暗主题/窄屏真机高清截图验收仍缺。
