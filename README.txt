@@ -14,11 +14,12 @@ GPU策略文件默认没有经过验收的设备，不能从页面绕过；共�
 
 原工作区Documents源码被云同步自动置为dataless导致读取超时；以此非云目录与NAS源码备份为维护基线。
 完整FPK仅内部验证使用。公开分发前需核对模型权重许可、FFmpeg mediasrv构建的源码和再分发义务、所有依赖授权以及干净机器安装兼容性。
+依赖许可文本随仓置于src/licenses/：FFmpeg（FFmpeg-host-copyright.txt，LGPL v2.1+，部分GPL v2+）、Practical-RIFE（Practical-RIFE-MIT.txt，MIT）、Real-ESRGAN（Real-ESRGAN-BSD.txt，BSD-3）、PyTorch（PyTorch-BSD.txt，BSD-3）、OpenCV（OpenCV-Apache2.txt，Apache-2.0）；fnOS官方SDK @trimjs/web-app 0.4.2，许可随fnOS应用中心。本仓整体MIT（LICENSE）。
 
 部署验收补充（2026-10-07）：
 已通过官方应用中心安装，专用UID980；系统网关UI四页已验证，普通媒体目录已有授权。
 飞牛祖先目录仅允许穿越，open_beneath采用Linux O_PATH|O_DIRECTORY|O_NOFOLLOW祖先句柄，最终目录/文件才读取；不放宽源片访问。
-本次部署对自带成果目录配置了liguangming的读写及默认ACL，并对上级appshare目录只给穿越权限。全新机器仍需配置成果共享目录的当前管理员权限；尚非公开版一键无配置安装。
+本次部署对自带成果目录配置了owner的读写及默认ACL，并对上级appshare目录只给穿越权限。全新机器仍需配置成果共享目录的当前管理员权限；尚非公开版一键无配置安装。
 接口验收：未登录/非管理员/越界403；RIFE2秒样片120帧60fps、SR48帧256x144/24fps，音轨保留、成果下载200；GPU任务held、运行中取消通过。整片4K/GPU画质与生产负载验收未完成。
 
 追加解码验收纠错：原插帧样片在复制重封装后发生H264码流解析错误（元数据正确不代表可播放）。纯FFmpeg复现后加入h264_mp4toannexb，并在worker实际解码计帧与检查错误；旧样片任务标failed，修复后重新测试。新成果才作为交付基线。原来的初轮“样片通过”仅为元数据验收，不代表逐帧解码通过。
@@ -62,7 +63,7 @@ GPU 全功率（2026-10-10，0.3.3，已部署）：
 三项行为级修复与升级（2026-10-14，0.3.7，已部署并验收）：
 ①both整片拼接flip撕裂修复：交错合并逐段解码回验+必要时翻转修正，杜绝上下半幅互换（旧坏件：小月喵-01[AI超分×4·60fps].mkv，撕裂产物639MB，位于NO_SAY，未删除）。
 ②样片封装时间戳偏移修复：样片与整片统一走分片合并封装路径。
-③fd超限修复（worker合并阶段）：2370分片concat清单改用/proc/self/fd/{store.fd}/子目录句柄、启动时提升RLIMIT_NOFILE至min(hard,65536)、run()透传ffmpeg stderr尾部到任务日志。实测76d44c79（广深虾酱-私拍-05，113748帧整片插帧）续跑成功，成品8.8GB 4K@60/1895.8s，抽帧目检与源一致。
+③fd超限修复（worker合并阶段）：2370分片concat清单改用/proc/self/fd/{store.fd}/子目录句柄、启动时提升RLIMIT_NOFILE至min(hard,65536)、run()透传ffmpeg stderr尾部到任务日志。实测76d44c79（样本 S-05，113748帧整片插帧）续跑成功，成品8.8GB 4K@60/1895.8s，抽帧目检与源一致。
 版本收口：version.py/manifest/package.json=0.3.7；PIPELINE_TAG保持0.3.0-cfr-segments（检查点向后兼容，实测旧任务可续跑）。前端资源引用与brand-meta静态串同步0.3.7（在线target已热修并HTTP 200核验；0.3.7.fpk包内www/index.html静态串仍为0.3.6，构建源已同步，下一版fpk自然对齐）。
 测试：NAS runtime python3.11 跑 python 单测77项通过；node前端测试32项0失败；esbuild 62.1kb。
 包验收：verify_package.py checksum_verified=true、lifecycle_verified=true、11核心文件齐、无开发残留。fpk=NAS releases/video-enhance-0.3.7.fpk（3051236708B，md5=f90fc3d70fcaedf2d89d7111a8d27493）。
@@ -73,9 +74,9 @@ GPU 全功率（2026-10-10，0.3.3，已部署）：
 遗留：f8cdb9bc旧坏件成品待用户决定重跑或手动处理（app不擅删用户目录文件）；明暗主题/窄屏真机高清截图验收仍缺。
 
 安全闭环与版本收口（2026-11-01，0.3.8 源码，未发布 FPK）：
-GitLab：https://www.bsligm.com:8445/codex/fnos-video-enhance；codex 开发，liguangming 审查批准合并。
+GitLab：https://www.bsligm.com:8445/codex/fnos-video-enhance；codex 开发，owner 审查批准合并。
 修复/加固：前端接口同源校验；错误提示改为子串归类；监测请求固定回环且拒绝重定向；包兼容 MD5 显式声明非安全用途。
-CI：版本一致性、Python语法/单测、前端构建逐字节核验/单测、打包清单、SAST、密钥和 npm 依赖扫描、安全裁决。三份安全报告均强制存在、成功且可解析；依赖报告按实例官方 schema 15.2.4 校验。Critical/High/Medium/Unknown 阻断，误报/兼容例外逐项注明 liguangming 裁决、理由、重查条件和到期日。行号变化、过期、重复及已失效条目均阻断；审查批准绑定精确 HEAD。
+CI：版本一致性、Python语法/单测、前端构建逐字节核验/单测、打包清单、SAST、密钥和 npm 依赖扫描、安全裁决。三份安全报告均强制存在、成功且可解析；依赖报告按实例官方 schema 15.2.4 校验。Critical/High/Medium/Unknown 阻断，误报/兼容例外逐项注明 owner 裁决、理由、重查条件和到期日。行号变化、过期、重复及已失效条目均阻断；审查批准绑定精确 HEAD。
 审查例外：三处 MD5 为现有 fnOS 包格式兼容校验，不作为防篡改证明；浏览器 fetch 告警在当前同源边界下判误报。仅对构建可复现的 src/www/app.js 排除重复 SAST，自有源码、其余静态资源仍在扫描范围，第三方 npm 依赖由 npm audit 覆盖。
 边界：本次是源码/CI交付；NAS 外置 PyTorch/CUDA/FFmpeg 运行包未纳入此 npm 扫描，不宣称 FPK 全供应链验收。上线需另外生成运行包清单、漏洞核查、fnpack 打包、备份升级和真机抽帧验收。线上0.3.7继续运行，PIPELINE_TAG 保持0.3.0-cfr-segments。
 
@@ -134,7 +135,7 @@ completed「原尺寸样片通过检查 2560×1440@30.0001fps 10.01s」；t=2/5/
 部署：0.3.11 热部署生产（顶层+src 四 py 全量同步 + www 全量同步，逐文件 md5 回读一致）；升级前备份 /vol2/@appdata/video-enhance-prehotfix-bm3d-20261110/；
 appcenter-cli stop/start 后 API 回读 version=0.3.11、capabilities 含 BM3D、gpu.available=True。
 CI收口：分支 feat/denoise-bm3d-0.3.11 的 MR !5 被取代关闭（其流水线 1708 canceled，结果不作数）；
-改由 feat/denoise-bm3d-0.3.11-v2 提交 MR !6（squash=e4fb9b8），流水线 1989/1991 success，liguangming 合并（合并提交 8e46794）。
+改由 feat/denoise-bm3d-0.3.11-v2 提交 MR !6（squash=e4fb9b8），流水线 1989/1991 success，owner 合并（合并提交 8e46794）。
 回滚：cp /vol2/@appdata/video-enhance-prehotfix-bm3d-20261110 各文件回位并重启应用（无数据结构变化）。
 遗留：本次为热部署（正式 0.3.11 fnpack fpk 未打，可随下次统一收口）；
 ec3dfc13（异星迷航 4K 双增强，暂停于 ~71.6%）BM3D 样片验收后已 resume 续跑；明暗主题/窄屏真机高清截图验收仍缺。
@@ -153,7 +154,7 @@ src/frontend.js:16 的 fetch 未移动，SAST SSRF 豁免指纹(:16) 未漂移�
 热部署生产（app.js md5 ff4923d3，升级前备份 /vol2/@appdata/video-enhance-prehotfix-pathfix-20261115/），运行中任务 21b7d05f（双增强，312427 帧）未受扰、帧数持续上涨。
 CI收口：MR !7（codex 提交 2b18f08/b9cfe99/00c5fdf）；流水线 2003（merge-ref aa460ce3）十 job 全绿
 （版本/语法/构建一致性/前端/Python 单测/SAST/依赖漏洞/secret/安全裁决/打包自检）；初版流水线因 WAF 8445 断连基础设施失败，恢复后 retry 通过；
-liguangming 留审查记录并批准，squash 合并（squash=c6b49c7，merged_by=liguangming，合并提交 02a8df8）。
+owner 留审查记录并批准，squash 合并（squash=c6b49c7，merged_by=owner，合并提交 02a8df8）。
 遗留：本次为热部署（正式 0.3.12 fnpack fpk 未打，与 0.3.11 一并于下次统一打包）；
 用户真实路径验收（多选混入不支持片源不再整批拒收）以前端回归测试+生产任务观察为据，尚待用户确认；
 任务 21b7d05f 4K 双增强整片在本记录落笔时仍在跑，终态与抽帧目检待核；明暗主题/窄屏真机高清截图验收仍缺。

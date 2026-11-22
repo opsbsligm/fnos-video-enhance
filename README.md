@@ -5,9 +5,16 @@
 去马赛克（DCT 域去压缩块）与深度去噪（BM3D，均为纯 CPU），
 接入飞牛统一登录与目录授权。
 
+> **声明**：本 App 为第三方应用，与飞牛 fnOS 官方无关联；fnOS 为各自权利人的商标/名称，商标归原主。
+
 - 全部处理在 NAS 本机完成，帧数据不出机；原片只读，成品直接落在原片旁边。
 - 分片检查点续跑；任务中心含进度、预计剩余、成品路径与历史清理。
 - 仅支持 SDR/CFR，不支持 HDR/DV。兼容包针对 fnOS x86 + Tesla P100。
+
+**许可与依赖许可**：本仓整体 MIT（见 `LICENSE`）。第三方组件许可文本随仓置于 `src/licenses/`：
+FFmpeg（`FFmpeg-host-copyright.txt`，LGPL v2.1+ / 部分 GPL v2+）、Practical-RIFE（`Practical-RIFE-MIT.txt`，MIT）、
+Real-ESRGAN（`Real-ESRGAN-BSD.txt`，BSD-3）、PyTorch（`PyTorch-BSD.txt`，BSD-3）、OpenCV（`OpenCV-Apache2.txt`，Apache-2.0）。
+fnOS 官方 SDK `@trimjs/web-app` 0.4.2，许可随 fnOS 应用中心。
 
 | 目录 | 说明 |
 | --- | --- |
