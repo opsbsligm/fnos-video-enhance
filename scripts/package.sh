@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-NAS=${NAS:-root@192.168.3.30}
+NAS=${NAS:-root@192.168.x.30}
 BUILD=/vol2/@appdata/video-enhance-build/video-enhance
 (cd "$ROOT" && npm ci && npm run build)
 # GPU模型和依赖已在本任务NAS构建目录封装。不要重新下载安装驱动。

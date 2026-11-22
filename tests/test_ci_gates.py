@@ -93,7 +93,7 @@ class AdjudicationTests(unittest.TestCase):
 
     def test_waivers_require_reviewer_reason_expiry_and_no_duplicates(self):
         entry = {'fingerprint': 'r1@src/a.py:1', 'reason': '有证据的误报',
-                 'reviewed_by': 'liguangming', 'expires_at': '2099-01-01', 'recheck': '代码变化复核'}
+                 'reviewed_by': 'owner', 'expires_at': '2099-01-01', 'recheck': '代码变化复核'}
         for field in entry:
             bad = dict(entry);bad.pop(field)
             proc = self.run_gate([finding('High')], [bad])
@@ -124,14 +124,14 @@ class AdjudicationTests(unittest.TestCase):
     def test_waiver_with_reason_unblocks(self):
         proc = self.run_gate([finding('High', rule='ssrf', file='src/a.py', line=3)],
                              [{'fingerprint': 'ssrf@src/a.py:3', 'reason': '固定回环地址，无外部输入',
-                               'recheck': '边界变化时复查', 'reviewed_by': 'liguangming', 'expires_at': '2099-01-01'}])
+                               'recheck': '边界变化时复查', 'reviewed_by': 'owner', 'expires_at': '2099-01-01'}])
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertIn('固定回环地址', proc.stdout)
 
     def test_expired_waiver_blocks(self):
         proc = self.run_gate([finding('High', rule='ssrf', file='src/a.py', line=3)],
                              [{'fingerprint': 'ssrf@src/a.py:3', 'reason': '已过期',
-                               'recheck': '边界变化时复查', 'reviewed_by': 'liguangming', 'expires_at': '2020-01-01'}])
+                               'recheck': '边界变化时复查', 'reviewed_by': 'owner', 'expires_at': '2020-01-01'}])
         self.assertEqual(proc.returncode, 1, proc.stdout)
         self.assertIn('豁免已过期', proc.stdout)
 
@@ -139,7 +139,7 @@ class AdjudicationTests(unittest.TestCase):
         """代码里已经不再报出的条目必须删除，防止豁免清单只增不减。"""
         proc = self.run_gate([finding('Info')],
                              [{'fingerprint': 'gone@src/old.py:1', 'reason': '历史条目',
-                               'recheck': '边界变化时复查', 'reviewed_by': 'liguangming', 'expires_at': '2099-01-01'}])
+                               'recheck': '边界变化时复查', 'reviewed_by': 'owner', 'expires_at': '2099-01-01'}])
         self.assertEqual(proc.returncode, 1, proc.stdout)
         self.assertIn('已失效条目', proc.stdout)
 
@@ -147,7 +147,7 @@ class AdjudicationTests(unittest.TestCase):
         """改动被保护的代码后行号变化，豁免自动失效，必须重新定性。"""
         proc = self.run_gate([finding('High', rule='ssrf', file='src/a.py', line=9)],
                              [{'fingerprint': 'ssrf@src/a.py:3', 'reason': '行号已漂移',
-                               'recheck': '边界变化时复查', 'reviewed_by': 'liguangming', 'expires_at': '2099-01-01'}])
+                               'recheck': '边界变化时复查', 'reviewed_by': 'owner', 'expires_at': '2099-01-01'}])
         self.assertEqual(proc.returncode, 1, proc.stdout)
 
 

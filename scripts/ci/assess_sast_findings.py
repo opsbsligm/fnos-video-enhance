@@ -82,8 +82,8 @@ def load_triage(path: Path) -> dict:
         for field in ('fingerprint', 'reason', 'recheck', 'expires_at', 'reviewed_by'):
             if not isinstance(entry.get(field), str) or not entry[field].strip():
                 raise ValueError(f'豁免缺少必填字段：{field}')
-        if entry['reviewed_by'] != 'liguangming':
-            raise ValueError('豁免须经 liguangming 裁决，并在 MR 绑定 HEAD 复核')
+        if entry['reviewed_by'] != 'owner':
+            raise ValueError('豁免须经 owner 裁决，并在 MR 绑定 HEAD 复核')
         datetime.date.fromisoformat(entry['expires_at'])
         fp = entry['fingerprint']
         if fp in result:
